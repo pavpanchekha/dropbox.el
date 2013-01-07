@@ -5,9 +5,7 @@
 
 
 (require 'oauth)
-
-(defvar dropbox-consumer-key    "iyt3kvuhr8521lf")
-(defvar dropbox-consumer-secret "2q3gkq1dlesrg8i")
+(load-file "dropbox-secrets.el")
 
 (defvar dropbox-request-url       "https://api.dropbox.com/1/oauth/request_token")
 (defvar dropbox-access-url        "https://api.dropbox.com/1/oauth/access_token")
