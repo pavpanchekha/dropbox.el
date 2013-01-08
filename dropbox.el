@@ -21,7 +21,7 @@
 
 (defconst url-non-sanitized-chars
   (append url-unreserved-chars '(?/ ?:)))
-  
+
 (defun url-hexify-url (string)
   "Return a new string that is STRING URI-encoded.
 First, STRING is converted to utf-8, if necessary.  Then, for each
@@ -245,7 +245,7 @@ If MATCH is non-nil, mention only file names that match the regexp MATCH.
 If NOSORT is non-nil, the list is not sorted--its order is unpredictable.
 Otherwise, the list returned is sorted with `string-lessp'.
 NOSORT is useful if you plan to sort the result yourself."
-  
+
   (let* ((path (dropbox-strip-file-name-prefix directory))
 	 (metadata (dropbox-get "metadata" path))
 	 (unsorted
@@ -274,7 +274,7 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-handle-file-truename (filename)
   filename)
 
-(defun dropbox-handle-file-attributes (filename &optional filename)
+(defun dropbox-handle-file-attributes (filename &optional id-format)
   (let ((resp
          (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
     (if (dropbox-error-p resp)
@@ -289,7 +289,20 @@ NOSORT is useful if you plan to sort the result yourself."
             date ; ctime
             (cdr (assoc 'bytes resp)) ; size in bytes
             ; TODO figure out if folder has any shares
-            (concat (if (cdr assoc 'is_dir resp) "d" "-") "rwx------") ; perms
+            (concat (if (cdr (assoc 'is_dir resp)) "d" "-") "rwx------") ; perms
             nil
             0
             0)))))
+
+(defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
+  ; TODO: implement visit and replace
+  (let ((buf (current-buffer))
+	(respbuf
+	 (oauth-fetch-url dropbox-access-token
+			  (dropbox-url "files" filename))))
+    (switch-to-buffer respbuf)
+    (beginning-of-buffer)
+    (re-search-forward "\r\n\r\n")
+    (delete-region (point-min) (point))
+    (switch-to-buffer buf)
+    (insert-buffer-substring respbuf beg end)))
