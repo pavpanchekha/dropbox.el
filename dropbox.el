@@ -64,7 +64,6 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-authenticate ()
   "Get authentication token for dropbox"
-  (interactive)
   
   (if (file-exists-p dropbox-token-file)
       (save-excursion
@@ -98,6 +97,7 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-connect ()
   "Connect to Dropbox, hacking in the Dropbox syntax into find-file"
+  (interactive)
 
   (let* ((token (dropbox-authenticate))
          (part (oauth-access-token-auth-t token)))
