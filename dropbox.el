@@ -50,6 +50,7 @@
   dropbox-access-token)
 
 (defun dropbox-connect (email)
+  "Connect to Dropbox, hacking in the Dropbox syntax into find-file"
   (interactive "MEmail/Dropbox username: ")
 
   (let* ((token (dropbox-authenticate email))
@@ -61,6 +62,8 @@
                '("\\`/db:" . dropbox-handler)))
 
 (defun dropbox-handler (operation &rest args)
+  "Handles IO operations to Dropbox files"
+
   (let ((handler (cdr (assoc operation dropbox-handler-alist))))
     (apply handler args)))
 
