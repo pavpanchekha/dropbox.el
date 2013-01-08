@@ -197,6 +197,9 @@ string: \"%\" followed by two lowercase hex digits."
 
   filename)
 
+(defun dropbox-handle-directory-files (directory &optional full match nosort)
+  '("Photos" "Picture" "Archives" "Backups" "Code" "Data" "D&D"))
+
 (defun dropbox-handle-file-name-completion (file directory &optional predicate)
   "Complete file name FILE in directory DIRECTORY.
    Returns string if that string is the longest common prefix to files that start with FILE;
@@ -245,3 +248,39 @@ string: \"%\" followed by two lowercase hex digits."
 	    nil)))
     (if nosort unsorted (sort unsorted 'string-lessp))))
 
+(defun dropbox-handle-substitute-in-file-name (filename)
+  "Replace slashes with one slash"
+
+  (replace-regexp-in-string ".*//+" "/" filename))
+
+(defun dropbox-handle-file-directory-p (filename)
+  "Return t if file FILENAME exists"
+
+  (let ((resp
+         (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
+    (if (dropbox-error-p resp)
+        nil
+      (cdr (assoc 'is_dir resp)))))
+
+(defun dropbox-handle-file-truename (filename)
+  filename)
+
+(defun dropbox-handle-file-attributes (filename &optional filename)
+  (let ((resp
+         (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
+    (if (dropbox-error-p resp)
+        nil
+      (let ((date (date-to-time (cdr (assoc 'modified resp)))))
+      (list (cdr (assoc 'is_dir resp)) ; Is dir?
+            1 ; Number of links
+            0 ; UID
+            0 ; GID
+            date ; atime
+            date ; mtime
+            date ; ctime
+            (cdr (assoc 'bytes resp)) ; size in bytes
+            ; TODO figure out if folder has any shares
+            (concat (if (cdr assoc 'is_dir resp) "d" "-") "rwx------") ; perms
+            nil
+            0
+            0)))))
