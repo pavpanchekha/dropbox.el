@@ -17,11 +17,30 @@
 (defvar dropbox-token-file "~/.dropbox-token")
 (defvar dropbox-api-content-host "api.dropbox.com")
 (setf oauth-nonce-function (function oauth-internal-make-nonce))
+(defvar dropbox-prefix "/db:")
+
+(defconst url-non-sanitized-chars
+  (append url-unreserved-chars '(?/ ?:)))
+  
+(defun url-hexify-url (string)
+  "Return a new string that is STRING URI-encoded.
+First, STRING is converted to utf-8, if necessary.  Then, for each
+character in the utf-8 string, those found in `url-non-sanitized-chars'
+are left as-is, all others are represented as a three-character
+string: \"%\" followed by two lowercase hex digits."
+  (mapconcat (lambda (byte)
+               (if (memq byte url-non-sanitized-chars)
+                   (char-to-string byte)
+                 (format "%%%02x" byte)))
+             (if (multibyte-string-p string)
+                 (encode-coding-string string 'utf-8)
+               string)
+             ""))
 
 (defun dropbox-url (name &optional path)
   (let ((ppath (concat "https://" dropbox-api-content-host "/1/" name)))
     (if path
-        (concat ppath "/dropbox/" path)
+        (concat ppath "/dropbox/" (url-hexify-url path))
       path)))
 
 (defun dropbox-get (name &optional path)
@@ -193,3 +212,27 @@
   (let ((resp
          (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
     (dropbox-error-p resp)))
+
+(defun string-strip-prefix (prefix str)
+  (if (string-prefix-p prefix str)
+      (substring str (length prefix))
+      str))
+
+(defun extract-fname (file path &optional full)
+  (let ((fname (strip/ (cdr (assoc 'path file)))))
+    (if (cdr (assoc 'is_dir file)) (setf fname (concat fname "/")))
+    (if full (concat dropbox-prefix fname)
+      (string-strip-prefix "/" (string-strip-prefix path fname)))))
+
+(defun dropbox-handle-directory-files (directory &optional full match nosort)
+  (let* ((path (string-strip-prefix "/" (dropbox-strip-file-name-prefix directory)))
+	 (metadata (dropbox-get "metadata" path))
+	 (unsorted
+	  (if (cdr (assoc 'is_dir metadata))
+	      (loop for file across (cdr (assoc 'contents metadata))
+		    for fname = (extract-fname file path full)
+		    if (or (null match) (string-match match fname))
+		    collect fname)
+	    nil)))
+    (if nosort unsorted (sort unsorted 'string-lessp))))
+
