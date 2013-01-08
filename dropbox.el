@@ -78,8 +78,9 @@
     (setq dropbox-token (oauth-t-token part))
     (setq dropbox-token-2 (oauth-t-token-secret part)))
 
-  (add-to-list 'file-name-handler-alist
-               '("\\`/db:" . dropbox-handler)))
+  (if (not (assoc "\\`/db:" file-name-handler-alist))
+      (setf file-name-handler-alist
+            (cons '("\\`/db:" . dropbox-handler) file-name-handler-alist))))
 
 (defun dropbox-handler (operation &rest args)
   "Handles IO operations to Dropbox files"
