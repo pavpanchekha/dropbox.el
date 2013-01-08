@@ -141,3 +141,17 @@
     (progn
       (string-match "^/db:\\(.*\\)" filename)
       (match-string 1 filename))))
+
+(defun dropbox-handle-expand-file-name (filename &optional default-directory)
+  "Return the canonicalized, absolute version of FILENAME"
+
+  filename)
+
+(defun dropbox-handle-file-name-completion (file directory &optional predicate)
+  "Complete file name FILE in directory DIRECTORY.
+   Returns string if that string is the longest common prefix to files that start with FILE;
+           t if only one such file, and it is named FILE;
+           nil if no such files"
+
+  (let* ((files (directory-files directory)))
+    (try-completion file files predicate)))
