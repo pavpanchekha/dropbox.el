@@ -25,22 +25,14 @@
       path)))
 
 (defun dropbox-get (name &optional path)
-  (save-excursion
-    (switch-to-buffer
-     (oauth-fetch-url dropbox-access-token (dropbox-url name path)))
+  (with-current-buffer (oauth-fetch-url dropbox-access-token (dropbox-url name path))
     (beginning-of-line)
-    (let ((val (json-read)))
-      (kill-this-buffer)
-      val)))
+    (json-read)))
 
 (defun dropbox-post (name &optional path args)
-  (save-excursion
-    (switch-to-buffer
-     (oauth-post-url dropbox-access-token (dropbox-url name path) args))
+  (with-current-buffer (oauth-post-url dropbox-access-token (dropbox-url name path) args)
     (beginning-of-line)
-    (let ((val (json-read)))
-      (kill-this-buffer)
-      val)))
+    (json-read)))
 
 (defun dropbox-error-p (json)
   (assoc 'error json))
