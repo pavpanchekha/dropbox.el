@@ -125,3 +125,19 @@
     (file-selinux-context . dropbox-handle-file-selinux-context)
     (set-file-selinux-context . dropbox-handle-set-file-selinux-context)
     (vc-registered . dropbox-handle-vc-registered)))
+
+(defun dropbox-handle-file-name-directory (filename)
+  "Return the directory component in file name FILENAME"
+
+  (if (string-match "^\\(/db:.*\\)/.*$" filename)
+      (match-string 1 filename)
+    "/db:/"))
+
+(defun dropbox-handle-file-name-nondirectory (filename)
+  "Return the filename component in file name FILENAME"
+
+  (if (string-match "^/db:.*/\\(.*\\)$" filename)
+      (match-string 1 filename)
+    (progn
+      (string-match "^/db:\\(.*\\)" filename)
+      (match-string 1 filename))))
