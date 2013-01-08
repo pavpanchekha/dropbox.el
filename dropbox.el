@@ -5,17 +5,45 @@
 
 
 (require 'oauth)
+(require 'json)
 (load-file "dropbox-secrets.el")
 
 (defvar dropbox-request-url       "https://api.dropbox.com/1/oauth/request_token")
 (defvar dropbox-access-url        "https://api.dropbox.com/1/oauth/access_token")
-(defvar dropbox-authorization-url "https://www.dropbox.com/1/oauth/authorize")
+(defvar dropbox-authorization-url "https://api.dropbox.com/1/oauth/authorize")
 (defvar dropbox-access-token nil)
 (defvar dropbox-locale nil)
 
 (defvar dropbox-token-file "~/.dropbox-token")
 (defvar dropbox-api-content-host "api.dropbox.com")
 (setf oauth-nonce-function (function oauth-internal-make-nonce))
+
+(defun dropbox-url (name &optional path)
+  (let ((ppath (concat "https://" dropbox-api-content-host "/1/" name)))
+    (if path
+        (concat ppath "/dropbox/" path)
+      path)))
+
+(defun dropbox-get (name &optional path)
+  (save-excursion
+    (switch-to-buffer
+     (oauth-fetch-url dropbox-access-token (dropbox-url name path)))
+    (beginning-of-line)
+    (let ((val (json-read)))
+      (kill-this-buffer)
+      val)))
+
+(defun dropbox-post (name &optional path args)
+  (save-excursion
+    (switch-to-buffer
+     (oauth-post-url dropbox-access-token (dropbox-url name path) args))
+    (beginning-of-line)
+    (let ((val (json-read)))
+      (kill-this-buffer)
+      val)))
+
+(defun dropbox-error-p (json)
+  (assoc 'error json))
 
 (defun dropbox-authenticate (username)
   "Get authentication token for dropbox"
@@ -131,7 +159,11 @@
 
   (if (string-match "^\\(/db:.*\\)/.*$" filename)
       (match-string 1 filename)
-    "/db:/"))
+    "/db:"))
+
+(defun dropbox-strip-file-name-prefix (filename)
+  (string-match "^/db:\\(.*\\)$" filename)
+  (match-string 1 filename))
 
 (defun dropbox-handle-file-name-nondirectory (filename)
   "Return the filename component in file name FILENAME"
