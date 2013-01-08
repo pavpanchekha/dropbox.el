@@ -230,19 +230,28 @@ string: \"%\" followed by two lowercase hex digits."
       (substring str (length prefix))
       str))
 
-(defun extract-fname (file path &optional full)
-  (let ((fname (strip/ (cdr (assoc 'path file)))))
+(defun dropbox-extract-fname (file path &optional full)
+  (let ((fname (string-strip-prefix "/" (cdr (assoc 'path file)))))
     (if (cdr (assoc 'is_dir file)) (setf fname (concat fname "/")))
     (if full (concat dropbox-prefix fname)
       (string-strip-prefix "/" (string-strip-prefix path fname)))))
 
 (defun dropbox-handle-directory-files (directory &optional full match nosort)
-  (let* ((path (string-strip-prefix "/" (dropbox-strip-file-name-prefix directory)))
+  "Return a list of names of files in DIRECTORY.
+There are three optional arguments:
+If FULL is non-nil, return absolute file names.  Otherwise return names
+ that are relative to the specified directory.
+If MATCH is non-nil, mention only file names that match the regexp MATCH.
+If NOSORT is non-nil, the list is not sorted--its order is unpredictable.
+Otherwise, the list returned is sorted with `string-lessp'.
+NOSORT is useful if you plan to sort the result yourself."
+  
+  (let* ((path (dropbox-strip-file-name-prefix directory))
 	 (metadata (dropbox-get "metadata" path))
 	 (unsorted
 	  (if (cdr (assoc 'is_dir metadata))
 	      (loop for file across (cdr (assoc 'contents metadata))
-		    for fname = (extract-fname file path full)
+		    for fname = (dropbox-extract-fname file path full)
 		    if (or (null match) (string-match match fname))
 		    collect fname)
 	    nil)))
