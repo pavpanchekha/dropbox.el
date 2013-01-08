@@ -105,7 +105,16 @@ string: \"%\" followed by two lowercase hex digits."
   "Handles IO operations to Dropbox files"
 
   (let ((handler (cdr (assoc operation dropbox-handler-alist))))
-    (apply handler args)))
+    (if handler
+        (apply handler args)
+      (let* ((inhibit-file-name-handlers
+              `(dropbox-handler
+                tramp-file-name-handler
+                tramp-vc-file-name-handler
+                tramp-completion-file-name-handler
+                . ,inhibit-file-name-handlers))
+             (inhibit-file-name-operation operation))
+        (apply operation args)))))
 
 (defconst dropbox-handler-alist
   '((load . dropbox-handle-load)
