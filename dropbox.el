@@ -43,13 +43,17 @@ string: \"%\" followed by two lowercase hex digits."
         (concat ppath "/dropbox/" (url-hexify-url path))
       path)))
 
+(defvar dropbox-cache '())
+
 (defun dropbox-get (name &optional path)
+  (message "Requesting %s for %s" name path)
   (with-current-buffer (oauth-fetch-url dropbox-access-token (dropbox-url name path))
     (beginning-of-line)
     (let ((json-false nil))
       (json-read))))
 
 (defun dropbox-post (name &optional path args)
+  (message "Requesting %s for %s" name path)
   (with-current-buffer (oauth-post-url dropbox-access-token (dropbox-url name path) args)
     (beginning-of-line)
     (let ((json-false nil))
@@ -60,6 +64,8 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-authenticate ()
   "Get authentication token for dropbox"
+  (interactive)
+  
   (if (file-exists-p dropbox-token-file)
       (save-excursion
         (find-file dropbox-token-file)
@@ -103,6 +109,8 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-handler (operation &rest args)
   "Handles IO operations to Dropbox files"
+
+  (message "Dropbox'ing operation %s for %s" operation args)
 
   (let ((handler (cdr (assoc operation dropbox-handler-alist))))
     (if handler
@@ -178,7 +186,7 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-handle-file-name-directory (filename)
   "Return the directory component in file name FILENAME"
 
-  (if (string-match "^\\(/db:.*\\)/.*$" filename)
+  (if (string-match "^\\(/db:.*/\\).*$" filename)
       (match-string 1 filename)
     "/db:"))
 
@@ -263,13 +271,17 @@ NOSORT is useful if you plan to sort the result yourself."
   (replace-regexp-in-string ".*//+" "/" filename))
 
 (defun dropbox-handle-file-directory-p (filename)
-  "Return t if file FILENAME exists"
+  "Return t if file FILENAME is a directory, too"
 
-  (let ((resp
-         (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
-    (if (dropbox-error-p resp)
-        nil
-      (cdr (assoc 'is_dir resp)))))
+  (if (or (string= filename "/db:") (string= filename "/db:/"))
+      t
+    (let ((resp (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
+      (if (dropbox-error-p resp)
+          nil
+        (cdr (assoc 'is_dir resp))))))
+
+(defun dropbox-handle-file-executable-p (filename)
+  (file-directory-p filename))
 
 (defun dropbox-handle-file-truename (filename)
   filename)
@@ -306,3 +318,34 @@ NOSORT is useful if you plan to sort the result yourself."
     (delete-region (point-min) (point))
     (switch-to-buffer buf)
     (insert-buffer-substring respbuf beg end)))
+
+(defun dropbox-handle-directory-file-name (directory)
+  "Remove the final slash from a directory name"
+  
+  (if (eq (aref directory (1- (length directory))) ?/)
+      (substring directory 0 -1)
+    directory))
+
+(defun dropbox-handle-file-name-as-directory (directory)
+  "Remove the final slash from a directory name"
+  
+  (if (not (eq (aref directory (1- (length directory))) ?/))
+      (concat directory "/")
+    directory))
+
+(defun dropbox-file-remote-p (file &optional identification connected)
+  "Test whether FILE is a remote file"
+
+  (message file)
+
+  (if (and connected (not dropbox-access-token))
+      nil
+    (case identification
+      ((method) "/db:")
+      ((user) "")
+      ((host) "")
+      ((localname) (dropbox-strip-file-name-prefix file))
+      (t "/db:"))))
+
+(defun dropbox-handle-unhandled-file-name-directory (filename)
+  (file-name-directory filename))
