@@ -177,3 +177,19 @@
 
   (let* ((files (directory-files directory)))
     (try-completion file files predicate)))
+
+(defun dropbox-handle-file-name-all-completions (file directory &optional predicate)
+  "Complete file name FILE in directory DIRECTORY.
+   Returns string if that string is the longest common prefix to files that start with FILE;
+           t if only one such file, and it is named FILE;
+           nil if no such files"
+
+  (let* ((files (directory-files directory)))
+    (all-completions file files predicate)))
+
+(defun dropbox-handle-file-exists-p (filename)
+  "Return t if file FILENAME exists"
+
+  (let ((resp
+         (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
+    (dropbox-error-p resp)))
