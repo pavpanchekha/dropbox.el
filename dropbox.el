@@ -329,11 +329,13 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-handle-file-name-as-directory (directory)
   "Remove the final slash from a directory name"
   
-  (if (not (eq (aref directory (1- (length directory))) ?/))
+  (if (and
+       (not (eq (aref directory (1- (length directory))) ?/))
+       (not (string= directory "/db:")))
       (concat directory "/")
     directory))
 
-(defun dropbox-file-remote-p (file &optional identification connected)
+(defun dropbox-handle-file-remote-p (file &optional identification connected)
   "Test whether FILE is a remote file"
 
   (message file)
