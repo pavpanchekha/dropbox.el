@@ -46,17 +46,19 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-get (name &optional path)
   (with-current-buffer (oauth-fetch-url dropbox-access-token (dropbox-url name path))
     (beginning-of-line)
-    (json-read)))
+    (let ((json-false nil))
+      (json-read))))
 
 (defun dropbox-post (name &optional path args)
   (with-current-buffer (oauth-post-url dropbox-access-token (dropbox-url name path) args)
     (beginning-of-line)
-    (json-read)))
+    (let ((json-false nil))
+      (json-read))))
 
 (defun dropbox-error-p (json)
   (assoc 'error json))
 
-(defun dropbox-authenticate (username)
+(defun dropbox-authenticate ()
   "Get authentication token for dropbox"
   (if (file-exists-p dropbox-token-file)
       (save-excursion
