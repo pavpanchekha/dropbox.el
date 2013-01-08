@@ -90,18 +90,16 @@ string: \"%\" followed by two lowercase hex digits."
       (kill-this-buffer)))
   dropbox-access-token)
 
-(defun dropbox-connect (email)
+(defun dropbox-connect ()
   "Connect to Dropbox, hacking in the Dropbox syntax into find-file"
-  (interactive "MEmail/Dropbox username: ")
 
-  (let* ((token (dropbox-authenticate email))
+  (let* ((token (dropbox-authenticate))
          (part (oauth-access-token-auth-t token)))
     (setq dropbox-token (oauth-t-token part))
     (setq dropbox-token-2 (oauth-t-token-secret part)))
 
-  (if (not (assoc "\\`/db:" file-name-handler-alist))
-      (setf file-name-handler-alist
-            (cons '("\\`/db:" . dropbox-handler) file-name-handler-alist))))
+  (setf file-name-handler-alist
+        (cons '("\\`/db:" . dropbox-handler) file-name-handler-alist)))
 
 (defun dropbox-handler (operation &rest args)
   "Handles IO operations to Dropbox files"
