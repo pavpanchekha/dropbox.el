@@ -155,17 +155,14 @@
     "/db:"))
 
 (defun dropbox-strip-file-name-prefix (filename)
-  (string-match "^/db:\\(.*\\)$" filename)
-  (match-string 1 filename))
+  (substring filename 4))
 
 (defun dropbox-handle-file-name-nondirectory (filename)
   "Return the filename component in file name FILENAME"
 
   (if (string-match "^/db:.*/\\(.*\\)$" filename)
       (match-string 1 filename)
-    (progn
-      (string-match "^/db:\\(.*\\)" filename)
-      (match-string 1 filename))))
+    (substring filename 4)))
 
 (defun dropbox-handle-expand-file-name (filename &optional default-directory)
   "Return the canonicalized, absolute version of FILENAME"
