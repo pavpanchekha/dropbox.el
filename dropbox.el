@@ -46,10 +46,10 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-url (name &optional path)
   (let ((ppath (concat "https://"
-		       (if (member name dropbox-content-apis)
-			   dropbox-api-content-host
-			 dropbox-api-host)
-		       "/1/" name)))
+                       (if (member name dropbox-content-apis)
+                           dropbox-api-content-host
+                         dropbox-api-host)
+                       "/1/" name)))
     (if path
         (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" path)))
       path)))
@@ -166,19 +166,19 @@ string: \"%\" followed by two lowercase hex digits."
 
   (let ((handler (cdr (assoc operation dropbox-handler-alist))))
     (if handler
-	(let ((retval (apply handler args)))
-	  (dropbox-message "... returning %s" retval)
-	  retval)
+        (let ((retval (apply handler args)))
+          (dropbox-message "... returning %s" retval)
+          retval)
       (let* ((inhibit-file-name-handlers
-	      `(dropbox-handler
-		tramp-file-name-handler
-		tramp-vc-file-name-handler
-		tramp-completion-file-name-handler
-		. ,inhibit-file-name-handlers))
-	     (inhibit-file-name-operation operation)
-	     (retval (apply operation args)))
-	(dropbox-message "... fall-through returning %s" retval)
-	retval))))
+              `(dropbox-handler
+                tramp-file-name-handler
+                tramp-vc-file-name-handler
+                tramp-completion-file-name-handler
+                . ,inhibit-file-name-handlers))
+             (inhibit-file-name-operation operation)
+             (retval (apply operation args)))
+        (dropbox-message "... fall-through returning %s" retval)
+        retval))))
 
 (defconst dropbox-handler-alist
   '((load . dropbox-handle-load)
