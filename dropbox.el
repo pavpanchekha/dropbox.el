@@ -255,7 +255,8 @@ string: \"%\" followed by two lowercase hex digits."
            t if only one such file, and it is named FILE;
            nil if no such files"
 
-  (let* ((files (directory-files directory)))
+  (let ((files (directory-files directory))
+        (predicate (if (eq predicate 'file-exists-p) nil predicate)))
     (try-completion file files predicate)))
 
 (defun dropbox-handle-file-name-all-completions (file directory &optional predicate)
@@ -272,7 +273,7 @@ string: \"%\" followed by two lowercase hex digits."
 
   (let ((resp
          (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
-    (dropbox-error-p resp)))
+    (not (dropbox-error-p resp))))
 
 (defun string-strip-prefix (prefix str)
   (if (string-prefix-p prefix str)
