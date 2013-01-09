@@ -15,7 +15,8 @@
 (defvar dropbox-locale nil)
 
 (defvar dropbox-token-file "~/.dropbox-token")
-(defvar dropbox-api-content-host "api.dropbox.com")
+(defvar dropbox-api-host "api.dropbox.com")
+(defvar dropbox-api-content-host "api-content.dropbox.com")
 (setf oauth-nonce-function (function oauth-internal-make-nonce))
 (defvar dropbox-prefix "/db:")
 
@@ -37,8 +38,14 @@ string: \"%\" followed by two lowercase hex digits."
                string)
              ""))
 
+(defvar dropbox-content-apis '("files" "files_put" "thumbnails" "commit_chunked_upload"))
+
 (defun dropbox-url (name &optional path)
-  (let ((ppath (concat "https://" dropbox-api-content-host "/1/" name)))
+  (let ((ppath (concat "https://"
+		       (if (member name dropbox-content-apis)
+			   dropbox-api-content-host
+			 dropbox-api-host)
+		       "/1/" name)))
     (if path
         (concat ppath "/dropbox/" (url-hexify-url path))
       path)))
@@ -114,15 +121,19 @@ string: \"%\" followed by two lowercase hex digits."
 
   (let ((handler (cdr (assoc operation dropbox-handler-alist))))
     (if handler
-        (apply handler args)
+	(let ((retval (apply handler args)))
+	  (message "... returning %s" retval)
+	  retval)
       (let* ((inhibit-file-name-handlers
-              `(dropbox-handler
-                tramp-file-name-handler
-                tramp-vc-file-name-handler
-                tramp-completion-file-name-handler
-                . ,inhibit-file-name-handlers))
-             (inhibit-file-name-operation operation))
-        (apply operation args)))))
+	      `(dropbox-handler
+		tramp-file-name-handler
+		tramp-vc-file-name-handler
+		tramp-completion-file-name-handler
+		. ,inhibit-file-name-handlers))
+	     (inhibit-file-name-operation operation)
+	     (retval (apply operation args)))
+	(message "... fall-through returning %s" retval)
+	retval))))
 
 (defconst dropbox-handler-alist
   '((load . dropbox-handle-load)
@@ -311,7 +322,7 @@ NOSORT is useful if you plan to sort the result yourself."
   (let ((buf (current-buffer))
 	(respbuf
 	 (oauth-fetch-url dropbox-access-token
-			  (dropbox-url "files" filename))))
+			  (dropbox-url "files" (dropbox-strip-file-name-prefix filename)))))
     (switch-to-buffer respbuf)
     (beginning-of-buffer)
     (re-search-forward "\r\n\r\n")
