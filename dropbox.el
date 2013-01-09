@@ -47,19 +47,60 @@ string: \"%\" followed by two lowercase hex digits."
 			 dropbox-api-host)
 		       "/1/" name)))
     (if path
-        (concat ppath "/dropbox/" (url-hexify-url path))
+        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" path)))
       path)))
 
 (defvar dropbox-cache '())
+(defvar dropbox-cache-timeout 60)
+
+(defun dropbox-cached (name path)
+  (let ((cached (assoc (cons name path) dropbox-cache)))
+    (if (and cached
+             (time-less-p (time-subtract (current-time) (cadr cached))
+                          `(0 ,dropbox-cache-timeout 0)))
+        (cddr cached)
+      nil)))
+
+(defun dropbox-cache (name path value)
+  (let ((cached (assoc (cons name path) dropbox-cache)))
+    (if cached
+        (setf (cdr cached) (cons (current-time) value)))
+    (setf dropbox-cache (cons `((,name . ,path) . (,(current-time) . ,value))
+                              dropbox-cache))
+
+    (if (and (string= name "metadata")
+             (not (dropbox-error-p value))
+             (assoc 'contents value))
+        (loop for ent across (cdr (assoc 'contents value))
+              for path = (cdr (assoc 'path ent))
+              for is-dir = (cdr (assoc 'is_dir ent))
+              if (not is-dir)
+              do (dropbox-cache "metadata" path ent)))
+
+    value))
+
+(defun dropbox-uncache (name path)
+  (setf dropbox-cache (remove-if '(lambda (x) (equal (car x) (cons name path)))
+                                 dropbox-cache)))
+
+(defun dropbox-clear-cache ()
+  (interactive)
+
+  (setf dropbox-cache '()))
 
 (defun dropbox-get (name &optional path)
-  (message "Requesting %s for %s" name path)
-  (with-current-buffer (oauth-fetch-url dropbox-access-token (dropbox-url name path))
-    (beginning-of-line)
-    (let ((json-false nil))
-      (json-read))))
+  (let ((cached (dropbox-cached name path)))
+    (or cached
+        (progn
+          (message "Requesting %s for %s" name path)
+          (with-current-buffer (oauth-fetch-url dropbox-access-token
+                                                (dropbox-url name path))
+            (beginning-of-line)
+            (let ((json-false nil))
+              (dropbox-cache name path (json-read))))))))
 
 (defun dropbox-post (name &optional path args)
+  (dropbox-uncache name path)
   (message "Requesting %s for %s" name path)
   (with-current-buffer (oauth-post-url dropbox-access-token (dropbox-url name path) args)
     (beginning-of-line)
@@ -71,7 +112,7 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-authenticate ()
   "Get authentication token for dropbox"
-  
+
   (if (file-exists-p dropbox-token-file)
       (save-excursion
         (find-file dropbox-token-file)
@@ -225,7 +266,8 @@ string: \"%\" followed by two lowercase hex digits."
            t if only one such file, and it is named FILE;
            nil if no such files"
 
-  (let* ((files (directory-files directory)))
+  (let ((files (directory-files directory))
+        (predicate (if (eq predicate 'file-exists-p) nil predicate)))
     (try-completion file files predicate)))
 
 (defun dropbox-handle-file-name-all-completions (file directory &optional predicate)
@@ -242,7 +284,7 @@ string: \"%\" followed by two lowercase hex digits."
 
   (let ((resp
          (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
-    (dropbox-error-p resp)))
+    (not (dropbox-error-p resp))))
 
 (defun string-strip-prefix (prefix str)
   (if (string-prefix-p prefix str)
@@ -332,14 +374,14 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-directory-file-name (directory)
   "Remove the final slash from a directory name"
-  
+
   (if (eq (aref directory (1- (length directory))) ?/)
       (substring directory 0 -1)
     directory))
 
 (defun dropbox-handle-file-name-as-directory (directory)
   "Remove the final slash from a directory name"
-  
+
   (if (and
        (not (eq (aref directory (1- (length directory))) ?/))
        (not (string= directory "/db:")))
