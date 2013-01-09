@@ -105,7 +105,7 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-authenticate ()
   "Get authentication token for dropbox"
-  
+
   (if (file-exists-p dropbox-token-file)
       (save-excursion
         (find-file dropbox-token-file)
@@ -362,14 +362,14 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-directory-file-name (directory)
   "Remove the final slash from a directory name"
-  
+
   (if (eq (aref directory (1- (length directory))) ?/)
       (substring directory 0 -1)
     directory))
 
 (defun dropbox-handle-file-name-as-directory (directory)
   "Remove the final slash from a directory name"
-  
+
   (if (and
        (not (eq (aref directory (1- (length directory))) ?/))
        (not (string= directory "/db:")))
