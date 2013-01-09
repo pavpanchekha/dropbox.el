@@ -40,19 +40,60 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-url (name &optional path)
   (let ((ppath (concat "https://" dropbox-api-content-host "/1/" name)))
     (if path
-        (concat ppath "/dropbox/" (url-hexify-url path))
+        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" path)))
       path)))
 
 (defvar dropbox-cache '())
+(defvar dropbox-cache-timeout 60)
+
+(defun dropbox-cached (name path)
+  (let ((cached (assoc (cons name path) dropbox-cache)))
+    (if (and cached
+             (time-less-p (time-subtract (current-time) (cadr cached))
+                          `(0 ,dropbox-cache-timeout 0)))
+        (cddr cached)
+      nil)))
+
+(defun dropbox-cache (name path value)
+  (let ((cached (assoc (cons name path) dropbox-cache)))
+    (if cached
+        (setf (cdr cached) (cons (current-time) value)))
+    (setf dropbox-cache (cons `((,name . ,path) . (,(current-time) . ,value))
+                              dropbox-cache))
+
+    (if (and (string= name "metadata")
+             (not (dropbox-error-p value))
+             (assoc 'contents value))
+        (loop for ent across (cdr (assoc 'contents value))
+              for path = (cdr (assoc 'path ent))
+              for is-dir = (cdr (assoc 'is_dir ent))
+              if (not is-dir)
+              do (dropbox-cache "metadata" path ent)))
+
+    value))
+
+(defun dropbox-uncache (name path)
+  (setf dropbox-cache (remove-if '(lambda (x) (equal (car x) (cons name path)))
+                                 dropbox-cache)))
+
+(defun dropbox-clear-cache ()
+  (interactive)
+
+  (setf dropbox-cache '()))
 
 (defun dropbox-get (name &optional path)
-  (message "Requesting %s for %s" name path)
-  (with-current-buffer (oauth-fetch-url dropbox-access-token (dropbox-url name path))
-    (beginning-of-line)
-    (let ((json-false nil))
-      (json-read))))
+  (let ((cached (dropbox-cached name path)))
+    (or cached
+        (progn
+          (message "Requesting %s for %s" name path)
+          (with-current-buffer (oauth-fetch-url dropbox-access-token
+                                                (dropbox-url name path))
+            (beginning-of-line)
+            (let ((json-false nil))
+              (dropbox-cache name path (json-read))))))))
 
 (defun dropbox-post (name &optional path args)
+  (dropbox-uncache name path)
   (message "Requesting %s for %s" name path)
   (with-current-buffer (oauth-post-url dropbox-access-token (dropbox-url name path) args)
     (beginning-of-line)
