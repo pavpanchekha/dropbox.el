@@ -20,6 +20,10 @@
 (setf oauth-nonce-function (function oauth-internal-make-nonce))
 (defvar dropbox-prefix "/db:")
 
+(defun dropbox-message (fmt-string &rest args)
+  ;(message fmt-string args))
+  nil)
+
 (defconst url-non-sanitized-chars
   (append url-unreserved-chars '(?/ ?:)))
 
@@ -92,7 +96,7 @@ string: \"%\" followed by two lowercase hex digits."
   (let ((cached (dropbox-cached name path)))
     (or cached
         (progn
-          (message "Requesting %s for %s" name path)
+          (dropbox-message "Requesting %s for %s" name path)
           (with-current-buffer (oauth-fetch-url dropbox-access-token
                                                 (dropbox-url name path))
             (beginning-of-line)
@@ -101,7 +105,7 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-post (name &optional path args)
   (dropbox-uncache name path)
-  (message "Requesting %s for %s" name path)
+  (dropbox-message "Requesting %s for %s" name path)
   (with-current-buffer (oauth-post-url dropbox-access-token (dropbox-url name path) args)
     (beginning-of-line)
     (let ((json-false nil))
@@ -158,12 +162,12 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-handler (operation &rest args)
   "Handles IO operations to Dropbox files"
 
-  (message "Dropbox'ing operation %s for %s" operation args)
+  (dropbox-message "Dropbox'ing operation %s for %s" operation args)
 
   (let ((handler (cdr (assoc operation dropbox-handler-alist))))
     (if handler
 	(let ((retval (apply handler args)))
-	  (message "... returning %s" retval)
+	  (dropbox-message "... returning %s" retval)
 	  retval)
       (let* ((inhibit-file-name-handlers
 	      `(dropbox-handler
@@ -173,7 +177,7 @@ string: \"%\" followed by two lowercase hex digits."
 		. ,inhibit-file-name-handlers))
 	     (inhibit-file-name-operation operation)
 	     (retval (apply operation args)))
-	(message "... fall-through returning %s" retval)
+	(dropbox-message "... fall-through returning %s" retval)
 	retval))))
 
 (defconst dropbox-handler-alist
@@ -384,6 +388,22 @@ NOSORT is useful if you plan to sort the result yourself."
   ; TODO: this might need to be implemented
   nil)
 
+(defun dropbox-file-time (filename)
+    (let ((resp
+         (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
+      (if (dropbox-error-p resp)
+	  nil
+	(date-to-time (cdr (assoc 'modified resp))))))
+
+(defun dropbox-handle-file-newer-than-file-p (file1 file2)
+  (let ((time1 (dropbox-file-time file1))
+	(time2 (dropbox-file-time file2)))
+    (if time1
+	(if time2
+	    (time-less-p time2 time1)
+	  t)
+      nil)))
+
 (defun dropbox-handle-make-auto-save-file-name ()
   (make-temp-file (dropbox-strip-file-name-prefix buffer-file-name)))
 
@@ -406,7 +426,7 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-handle-file-remote-p (file &optional identification connected)
   "Test whether FILE is a remote file"
 
-  (message file)
+  (dropbox-message file)
 
   (if (and connected (not dropbox-access-token))
       nil
