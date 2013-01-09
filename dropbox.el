@@ -388,24 +388,20 @@ NOSORT is useful if you plan to sort the result yourself."
   ; TODO: this might need to be implemented
   nil)
 
-(defun dropbox-file-time (filename)
-    (let ((resp
-         (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
-      (if (dropbox-error-p resp)
-	  nil
-	(date-to-time (cdr (assoc 'modified resp))))))
-
 (defun dropbox-handle-file-newer-than-file-p (file1 file2)
-  (let ((time1 (dropbox-file-time file1))
-	(time2 (dropbox-file-time file2)))
-    (if time1
-	(if time2
-	    (time-less-p time2 time1)
-	  t)
-      nil)))
+  ; these files might not both be dropbox files
+  (let ((file1attr (file-attributes file1))
+	(file2attr (file-attributes file2)))
+    (let ((time1 (if file1attr (elt file1attr 4) nil))
+	  (time2 (if file2attr (elt file2attr 4) nil)))
+      (if time1
+	  (if time2
+	      (time-less-p time2 time1)
+	    t)
+	nil))))
 
 (defun dropbox-handle-make-auto-save-file-name ()
-  (make-temp-file (dropbox-strip-file-name-prefix buffer-file-name)))
+  (make-temp-file (url-hexify-string (dropbox-strip-file-name-prefix buffer-file-name))))
 
 (defun dropbox-handle-directory-file-name (directory)
   "Remove the final slash from a directory name"
@@ -439,3 +435,16 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-unhandled-file-name-directory (filename)
   (file-name-directory filename))
+
+(defun dropbox-handle-file-modes (filename)
+  ; TODO: implement me!
+  493) ; 493 = 0b111101101 is rwxr-xr-x
+
+(defun dropbox-handle-vc-registered (file)
+  t)
+
+(defun dropbox-handle-file-symlink-p (filename)
+  nil)
+
+(defun dropbox-handle-find-backup-file-name (fn)
+  nil)
