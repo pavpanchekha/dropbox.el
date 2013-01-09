@@ -21,7 +21,7 @@
 (defvar dropbox-prefix "/db:")
 
 (defun dropbox-message (fmt-string &rest args)
-  ;(message fmt-string args))
+  ;(apply 'message fmt-string args))
   nil)
 
 (defconst url-non-sanitized-chars
