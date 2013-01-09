@@ -51,7 +51,7 @@ string: \"%\" followed by two lowercase hex digits."
                          dropbox-api-host)
                        "/1/" name)))
     (if path
-        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" path)))
+        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" (dropbox-strip-file-name-prefix path))))
       path)))
 
 (defvar dropbox-cache '())
@@ -93,15 +93,29 @@ string: \"%\" followed by two lowercase hex digits."
   (setf dropbox-cache '()))
 
 (defun dropbox-get (name &optional path)
-  (let ((cached (dropbox-cached name path)))
-    (or cached
-        (progn
-          (dropbox-message "Requesting %s for %s" name path)
-          (with-current-buffer (oauth-fetch-url dropbox-access-token
-                                                (dropbox-url name path))
-            (beginning-of-line)
-            (let ((json-false nil))
-              (dropbox-cache name path (json-read))))))))
+  (dropbox-message "Requesting %s for %s" name path)
+  (oauth-fetch-url dropbox-access-token (dropbox-url name path)))
+
+(defun dropbox-get-http-code (name &optional path)
+  (save-excursion
+    (let ((buf (dropbox-get name path)))
+      (with-current-buffer buf
+        (beginning-of-buffer)
+        (end-of-line)
+        (let ((rline (buffer-substring (point-min) (point))))
+          (string-match (concat "^\\(HTTP/[\\.[:digit:]]+\\)" "[[:space:]]+"
+                                "\\([[:digit:]]\\{3\\}\\)" "[[:space:]]+"
+                                "\\(.*\\)$")
+                        rline)
+          (list (match-string 1 rline) (string-to-number (match-string 2 rline))
+                (match-string 3 rline)))))))
+
+(defun dropbox-get-json (name &optional path)
+  (or (dropbox-cached name path)
+      (with-current-buffer (dropbox-get name path)
+        (beginning-of-line)
+        (let ((json-false nil))
+          (dropbox-cache name path (json-read))))))
 
 (defun dropbox-post (name &optional path args)
   (dropbox-uncache name path)
@@ -287,7 +301,7 @@ string: \"%\" followed by two lowercase hex digits."
   "Return t if file FILENAME exists"
 
   (let ((resp
-         (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
+         (dropbox-get-json "metadata" filename)))
     (not (dropbox-error-p resp))))
 
 (defun string-strip-prefix (prefix str)
@@ -312,7 +326,7 @@ Otherwise, the list returned is sorted with `string-lessp'.
 NOSORT is useful if you plan to sort the result yourself."
 
   (let* ((path (dropbox-strip-file-name-prefix directory))
-	 (metadata (dropbox-get "metadata" path))
+	 (metadata (dropbox-get-json "metadata" directory))
 	 (unsorted
 	  (if (cdr (assoc 'is_dir metadata))
 	      (loop for file across (cdr (assoc 'contents metadata))
@@ -332,7 +346,7 @@ NOSORT is useful if you plan to sort the result yourself."
 
   (if (or (string= filename "/db:") (string= filename "/db:/"))
       t
-    (let ((resp (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
+    (let ((resp (dropbox-get-json "metadata" filename)))
       (if (dropbox-error-p resp)
           nil
         (cdr (assoc 'is_dir resp))))))
@@ -345,7 +359,7 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-file-attributes (filename &optional id-format)
   (let ((resp
-         (dropbox-get "metadata" (dropbox-strip-file-name-prefix filename))))
+         (dropbox-get-json "metadata" filename)))
     (if (dropbox-error-p resp)
         nil
       (let ((date (date-to-time (cdr (assoc 'modified resp)))))
@@ -369,7 +383,7 @@ NOSORT is useful if you plan to sort the result yourself."
   (let ((buf (current-buffer))
 	(respbuf
 	 (oauth-fetch-url dropbox-access-token
-			  (dropbox-url "files" (dropbox-strip-file-name-prefix filename)))))
+			  (dropbox-url "files" filename))))
     (switch-to-buffer respbuf)
     (beginning-of-buffer)
     (re-search-forward "\r\n\r\n")
@@ -388,6 +402,13 @@ NOSORT is useful if you plan to sort the result yourself."
   ; TODO: this might need to be implemented
   nil)
 
+(defun dropbox-file-time (filename)
+    (let ((resp
+         (dropbox-get-json "metadata" filename)))
+      (if (dropbox-error-p resp)
+	  nil
+	(date-to-time (cdr (assoc 'modified resp))))))
+
 (defun dropbox-handle-file-newer-than-file-p (file1 file2)
   ; these files might not both be dropbox files
   (let ((file1attr (file-attributes file1))
@@ -401,7 +422,7 @@ NOSORT is useful if you plan to sort the result yourself."
 	nil))))
 
 (defun dropbox-handle-make-auto-save-file-name ()
-  (make-temp-file (url-hexify-string (dropbox-strip-file-name-prefix buffer-file-name))))
+  (make-temp-file (file-name-nondirectory buffer-file-name)))
 
 (defun dropbox-handle-directory-file-name (directory)
   "Remove the final slash from a directory name"
@@ -434,14 +455,14 @@ NOSORT is useful if you plan to sort the result yourself."
       (t "/db:"))))
 
 (defun dropbox-handle-unhandled-file-name-directory (filename)
-  (file-name-directory filename))
+  nil)
 
 (defun dropbox-handle-file-modes (filename)
   ; TODO: implement me!
   493) ; 493 = 0b111101101 is rwxr-xr-x
 
 (defun dropbox-handle-vc-registered (file)
-  t)
+  nil)
 
 (defun dropbox-handle-file-symlink-p (filename)
   nil)
