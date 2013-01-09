@@ -360,7 +360,8 @@ NOSORT is useful if you plan to sort the result yourself."
             0)))))
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
-  ; TODO: implement visit and replace
+  ; TODO: implement replace
+  (barf-if-buffer-read-only)
   (let ((buf (current-buffer))
 	(respbuf
 	 (oauth-fetch-url dropbox-access-token
@@ -370,7 +371,21 @@ NOSORT is useful if you plan to sort the result yourself."
     (re-search-forward "\r\n\r\n")
     (delete-region (point-min) (point))
     (switch-to-buffer buf)
-    (insert-buffer-substring respbuf beg end)))
+    (save-excursion (insert-buffer-substring respbuf beg end))
+    (when visit
+	(setf buffer-file-name filename)
+	(setf buffer-read-only (not (file-writable-p filename)))
+	(set-buffer-modified-p nil))))
+
+(defun dropbox-handle-file-writable-p (filename)
+  t)
+
+(defun dropbox-handle-set-visited-file-modtime (&optional time-list)
+  ; TODO: this might need to be implemented
+  nil)
+
+(defun dropbox-handle-make-auto-save-file-name ()
+  (make-temp-file (dropbox-strip-file-name-prefix buffer-file-name)))
 
 (defun dropbox-handle-directory-file-name (directory)
   "Remove the final slash from a directory name"
