@@ -210,63 +210,88 @@ string: \"%\" followed by two lowercase hex digits."
         retval))))
 
 (defconst dropbox-handler-alist
-  '((load . dropbox-handle-load)
-    (make-symbolic-link . dropbox-handle-make-symbolic-link)
-    (file-name-as-directory . dropbox-handle-file-name-as-directory)
+  '(;; Handled
+    ; Path parsing
     (file-name-directory . dropbox-handle-file-name-directory)
     (file-name-nondirectory . dropbox-handle-file-name-nondirectory)
-    (file-truename . dropbox-handle-file-truename)
-    (file-exists-p . dropbox-handle-file-exists-p)
-    (file-directory-p . dropbox-handle-file-directory-p)
-    (file-executable-p . dropbox-handle-file-executable-p)
-    (file-readable-p . dropbox-handle-file-readable-p)
-    (file-regular-p . dropbox-handle-file-regular-p)
-    (file-symlink-p . dropbox-handle-file-symlink-p)
-    (file-writable-p . dropbox-handle-file-writable-p)
-    (file-ownership-preserved-p . dropbox-handle-file-ownership-preserved-p)
-    (file-newer-than-file-p . dropbox-handle-file-newer-than-file-p)
-    (file-attributes . dropbox-handle-file-attributes)
-    (file-modes . dropbox-handle-file-modes)
-    (directory-files . dropbox-handle-directory-files)
-    (directory-files-and-attributes
-     . dropbox-handle-directory-files-and-attributes)
-    (file-name-all-completions . dropbox-handle-file-name-all-completions)
-    (file-name-completion . dropbox-handle-file-name-completion)
-    (add-name-to-file . dropbox-handle-add-name-to-file)
-    (copy-file . dropbox-handle-copy-file)
-    (copy-directory . dropbox-handle-copy-directory)
-    (rename-file . dropbox-handle-rename-file)
-    (set-file-modes . dropbox-handle-set-file-modes)
-    (set-file-times . dropbox-handle-set-file-times)
-    (make-directory . dropbox-handle-make-directory)
-    (delete-directory . dropbox-handle-delete-directory)
-    (delete-file . dropbox-handle-delete-file)
-    (directory-file-name . dropbox-handle-directory-file-name)
-    (executable-find . dropbox-handle-executable-find)
-    (start-file-process . dropbox-handle-start-file-process)
-    (process-file . dropbox-handle-process-file)
-    (shell-command . dropbox-handle-shell-command)
-    (insert-directory . dropbox-handle-insert-directory)
     (expand-file-name . dropbox-handle-expand-file-name)
+    (file-truename . dropbox-handle-file-truename)
     (substitute-in-file-name . dropbox-handle-substitute-in-file-name)
-    (file-local-copy . dropbox-handle-file-local-copy)
-    (file-remote-p . dropbox-handle-file-remote-p)
-    (insert-file-contents . dropbox-handle-insert-file-contents)
-    (insert-file-contents-literally
-     . dropbox-handle-insert-file-contents-literally)
-    (write-region . dropbox-handle-write-region)
+    (directory-file-name . dropbox-handle-directory-file-name)
+    (file-name-as-directory . dropbox-handle-file-name-as-directory)
     (find-backup-file-name . dropbox-handle-find-backup-file-name)
     (make-auto-save-file-name . dropbox-handle-make-auto-save-file-name)
     (unhandled-file-name-directory . dropbox-handle-unhandled-file-name-directory)
-    (dired-compress-file . dropbox-handle-dired-compress-file)
-    (dired-recursive-delete-directory
-     . dropbox-handle-dired-recursive-delete-directory)
-    (dired-uncache . dropbox-handle-dired-uncache)
+
+    ; Predicates
+    (file-directory-p . dropbox-handle-file-directory-p)
+    (file-executable-p . dropbox-handle-file-executable-p)
+    (file-exists-p . dropbox-handle-file-exists-p)
+    (file-newer-than-file-p . dropbox-handle-file-newer-than-file-p)
+    (file-remote-p . dropbox-handle-file-remote-p)
+    (file-symlink-p . dropbox-handle-file-symlink-p)
+    (file-writable-p . dropbox-handle-file-writable-p)
+    (vc-registered . dropbox-handle-vc-registered)
+
+    ; Attributes
+    (file-attributes . dropbox-handle-file-attributes)
+    (file-modes . dropbox-handle-file-modes)
     (set-visited-file-modtime . dropbox-handle-set-visited-file-modtime)
+
+    ; Directory Contents
+    (directory-files . dropbox-handle-directory-files)
+    (file-name-all-completions . dropbox-handle-file-name-all-completions)
+    (file-name-completion . dropbox-handle-file-name-completion)
+
+    ; File Contents
+    (insert-file-contents . dropbox-handle-insert-file-contents)
+    (write-region . dropbox-handle-write-region)
+
+    ; Misc
+    (process-file . dropbox-handle-process-file)
+
+    ;; Unhandled
+    ; Predicates
+    (file-ownership-preserved-p . dropbox-handle-file-ownership-preserved-p)
+    (file-readable-p . dropbox-handle-file-readable-p)
+    (file-regular-p . dropbox-handle-file-regular-p)
+
+    ; Attributes
+    (set-file-modes . dropbox-handle-set-file-modes)
+    (set-file-times . dropbox-handle-set-file-times)
     (verify-visited-file-modtime . dropbox-handle-verify-visited-file-modtime)
     (file-selinux-context . dropbox-handle-file-selinux-context)
     (set-file-selinux-context . dropbox-handle-set-file-selinux-context)
-    (vc-registered . dropbox-handle-vc-registered)))
+
+    ; Directory Contents
+    (directory-files-and-attributes
+     . dropbox-handle-directory-files-and-attributes)
+    (make-symbolic-link . dropbox-handle-make-symbolic-link)
+    (copy-file . dropbox-handle-copy-file)
+    (copy-directory . dropbox-handle-copy-directory)
+    (rename-file . dropbox-handle-rename-file)
+    (make-directory . dropbox-handle-make-directory)
+    (delete-directory . dropbox-handle-delete-directory)
+    (delete-file . dropbox-handle-delete-file)
+    (executable-find . dropbox-handle-executable-find)
+
+    ; File Contents
+    (file-local-copy . dropbox-handle-file-local-copy)
+    (insert-file-contents-literally
+     . dropbox-handle-insert-file-contents-literally)
+
+    ; Misc
+    (load . dropbox-handle-load)
+    (add-name-to-file . dropbox-handle-add-name-to-file)
+    (start-file-process . dropbox-handle-start-file-process)
+    (shell-command . dropbox-handle-shell-command)
+    (insert-directory . dropbox-handle-insert-directory)
+    (dired-compress-file . dropbox-handle-dired-compress-file)
+    (dired-recursive-delete-directory
+     . dropbox-handle-dired-recursive-delete-directory)
+    (dired-uncache . dropbox-handle-dired-uncache)))
+
+;; Path Parsing
 
 (defun dropbox-handle-file-name-directory (filename)
   "Return the directory component in file name FILENAME"
@@ -290,27 +315,53 @@ string: \"%\" followed by two lowercase hex digits."
 
   filename)
 
-(defun dropbox-handle-directory-files (directory &optional full match nosort)
-  '("Photos" "Picture" "Archives" "Backups" "Code" "Data" "D&D"))
+(defun dropbox-handle-file-truename (filename)
+  filename)
 
-(defun dropbox-handle-file-name-completion (file directory &optional predicate)
-  "Complete file name FILE in directory DIRECTORY.
-   Returns string if that string is the longest common prefix to files that start with FILE;
-           t if only one such file, and it is named FILE;
-           nil if no such files"
+(defun dropbox-handle-substitute-in-file-name (filename)
+  "Replace slashes with one slash"
 
-  (let ((files (directory-files directory))
-        (predicate (if (eq predicate 'file-exists-p) nil predicate)))
-    (try-completion file files predicate)))
+  (replace-regexp-in-string ".*//+" "/" filename))
 
-(defun dropbox-handle-file-name-all-completions (file directory &optional predicate)
-  "Complete file name FILE in directory DIRECTORY.
-   Returns string if that string is the longest common prefix to files that start with FILE;
-           t if only one such file, and it is named FILE;
-           nil if no such files"
+(defun dropbox-handle-directory-file-name (directory)
+  "Remove the final slash from a directory name"
 
-  (let* ((files (directory-files directory)))
-    (all-completions file files predicate)))
+  (if (eq (aref directory (1- (length directory))) ?/)
+      (substring directory 0 -1)
+    directory))
+
+(defun dropbox-handle-file-name-as-directory (directory)
+  "Remove the final slash from a directory name"
+
+  (if (and
+       (not (eq (aref directory (1- (length directory))) ?/))
+       (not (string= directory "/db:")))
+      (concat directory "/")
+    directory))
+
+(defun dropbox-handle-find-backup-file-name (fn)
+  nil)
+
+(defun dropbox-handle-make-auto-save-file-name ()
+  (make-temp-file (file-name-nondirectory buffer-file-name)))
+
+(defun dropbox-handle-unhandled-file-name-directory (filename)
+  nil)
+
+;; Predicates
+
+(defun dropbox-handle-file-directory-p (filename)
+  "Return t if file FILENAME is a directory, too"
+
+  (if (or (string= filename "/db:") (string= filename "/db:/"))
+      t
+    (let ((resp (dropbox-get-json "metadata" filename)))
+      (if (dropbox-error-p resp)
+          nil
+        (cdr (assoc 'is_dir resp))))))
+
+(defun dropbox-handle-file-executable-p (filename)
+  (file-directory-p filename))
 
 (defun dropbox-handle-file-exists-p (filename)
   "Return t if file FILENAME exists"
@@ -318,6 +369,72 @@ string: \"%\" followed by two lowercase hex digits."
   (let ((resp
          (dropbox-get-json "metadata" filename)))
     (not (dropbox-error-p resp))))
+
+(defun dropbox-handle-file-newer-than-file-p (file1 file2)
+  ; these files might not both be dropbox files
+  (let ((file1attr (file-attributes file1))
+	(file2attr (file-attributes file2)))
+    (let ((time1 (if file1attr (elt file1attr 4) nil))
+	  (time2 (if file2attr (elt file2attr 4) nil)))
+      (if time1
+	  (if time2
+	      (time-less-p time2 time1)
+	    t)
+	nil))))
+
+(defun dropbox-handle-file-remote-p (file &optional identification connected)
+  "Test whether FILE is a remote file"
+
+  (dropbox-message file)
+
+  (if (and connected (not dropbox-access-token))
+      nil
+    (case identification
+      ((method) "/db:")
+      ((user) "")
+      ((host) "")
+      ((localname) (dropbox-strip-file-name-prefix file))
+      (t "/db:"))))
+
+(defun dropbox-handle-file-symlink-p (filename)
+  nil)
+
+(defun dropbox-handle-file-writable-p (filename)
+  t)
+
+(defun dropbox-handle-vc-registered (file)
+  nil)
+
+;; Attributes
+
+(defun dropbox-handle-file-attributes (filename &optional id-format)
+  (let ((resp
+         (dropbox-get-json "metadata" filename)))
+    (if (dropbox-error-p resp)
+        nil
+      (let ((date (date-to-time (cdr (assoc 'modified resp)))))
+      (list (cdr (assoc 'is_dir resp)) ; Is dir?
+            1 ; Number of links
+            0 ; UID
+            0 ; GID
+            date ; atime
+            date ; mtime
+            date ; ctime
+            (cdr (assoc 'bytes resp)) ; size in bytes
+            ; TODO figure out if folder has any shares
+            (concat (if (cdr (assoc 'is_dir resp)) "d" "-") "rwx------") ; perms
+            nil
+            0
+            0)))))
+
+(defun dropbox-handle-file-modes (filename)
+  448) ; 448 = 0b111000000 is rwx------
+
+(defun dropbox-handle-set-visited-file-modtime (&optional time-list)
+  ; TODO: this might need to be implemented
+  nil)
+
+;; Directory Contents
 
 (defun string-strip-prefix (prefix str)
   (if (string-prefix-p prefix str)
@@ -351,46 +468,26 @@ NOSORT is useful if you plan to sort the result yourself."
 	    nil)))
     (if nosort unsorted (sort unsorted 'string-lessp))))
 
-(defun dropbox-handle-substitute-in-file-name (filename)
-  "Replace slashes with one slash"
+(defun dropbox-handle-file-name-all-completions (file directory &optional predicate)
+  "Complete file name FILE in directory DIRECTORY.
+   Returns string if that string is the longest common prefix to files that start with FILE;
+           t if only one such file, and it is named FILE;
+           nil if no such files"
 
-  (replace-regexp-in-string ".*//+" "/" filename))
+  (let* ((files (directory-files directory)))
+    (all-completions file files predicate)))
 
-(defun dropbox-handle-file-directory-p (filename)
-  "Return t if file FILENAME is a directory, too"
+(defun dropbox-handle-file-name-completion (file directory &optional predicate)
+  "Complete file name FILE in directory DIRECTORY.
+   Returns string if that string is the longest common prefix to files that start with FILE;
+           t if only one such file, and it is named FILE;
+           nil if no such files"
 
-  (if (or (string= filename "/db:") (string= filename "/db:/"))
-      t
-    (let ((resp (dropbox-get-json "metadata" filename)))
-      (if (dropbox-error-p resp)
-          nil
-        (cdr (assoc 'is_dir resp))))))
+  (let ((files (directory-files directory))
+        (predicate (if (eq predicate 'file-exists-p) nil predicate)))
+    (try-completion file files predicate)))
 
-(defun dropbox-handle-file-executable-p (filename)
-  (file-directory-p filename))
-
-(defun dropbox-handle-file-truename (filename)
-  filename)
-
-(defun dropbox-handle-file-attributes (filename &optional id-format)
-  (let ((resp
-         (dropbox-get-json "metadata" filename)))
-    (if (dropbox-error-p resp)
-        nil
-      (let ((date (date-to-time (cdr (assoc 'modified resp)))))
-      (list (cdr (assoc 'is_dir resp)) ; Is dir?
-            1 ; Number of links
-            0 ; UID
-            0 ; GID
-            date ; atime
-            date ; mtime
-            date ; ctime
-            (cdr (assoc 'bytes resp)) ; size in bytes
-            ; TODO figure out if folder has any shares
-            (concat (if (cdr (assoc 'is_dir resp)) "d" "-") "rwx------") ; perms
-            nil
-            0
-            0)))))
+;; File contents
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
   ; TODO: Fails on images with switch to deleted buffer
@@ -412,80 +509,6 @@ NOSORT is useful if you plan to sort the result yourself."
       (setf buffer-file-name filename)
       (setf buffer-read-only (not (file-writable-p filename)))
       (set-buffer-modified-p nil))))
-
-(defun dropbox-handle-file-writable-p (filename)
-  t)
-
-(defun dropbox-handle-set-visited-file-modtime (&optional time-list)
-  ; TODO: this might need to be implemented
-  nil)
-
-(defun dropbox-file-time (filename)
-    (let ((resp
-         (dropbox-get-json "metadata" filename)))
-      (if (dropbox-error-p resp)
-	  nil
-	(date-to-time (cdr (assoc 'modified resp))))))
-
-(defun dropbox-handle-file-newer-than-file-p (file1 file2)
-  ; these files might not both be dropbox files
-  (let ((file1attr (file-attributes file1))
-	(file2attr (file-attributes file2)))
-    (let ((time1 (if file1attr (elt file1attr 4) nil))
-	  (time2 (if file2attr (elt file2attr 4) nil)))
-      (if time1
-	  (if time2
-	      (time-less-p time2 time1)
-	    t)
-	nil))))
-
-(defun dropbox-handle-make-auto-save-file-name ()
-  (make-temp-file (file-name-nondirectory buffer-file-name)))
-
-(defun dropbox-handle-directory-file-name (directory)
-  "Remove the final slash from a directory name"
-
-  (if (eq (aref directory (1- (length directory))) ?/)
-      (substring directory 0 -1)
-    directory))
-
-(defun dropbox-handle-file-name-as-directory (directory)
-  "Remove the final slash from a directory name"
-
-  (if (and
-       (not (eq (aref directory (1- (length directory))) ?/))
-       (not (string= directory "/db:")))
-      (concat directory "/")
-    directory))
-
-(defun dropbox-handle-file-remote-p (file &optional identification connected)
-  "Test whether FILE is a remote file"
-
-  (dropbox-message file)
-
-  (if (and connected (not dropbox-access-token))
-      nil
-    (case identification
-      ((method) "/db:")
-      ((user) "")
-      ((host) "")
-      ((localname) (dropbox-strip-file-name-prefix file))
-      (t "/db:"))))
-
-(defun dropbox-handle-unhandled-file-name-directory (filename)
-  nil)
-
-(defun dropbox-handle-file-modes (filename)
-  448) ; 448 = 0b111000000 is rwx------
-
-(defun dropbox-handle-vc-registered (file)
-  nil)
-
-(defun dropbox-handle-file-symlink-p (filename)
-  nil)
-
-(defun dropbox-handle-find-backup-file-name (fn)
-  nil)
 
 ; Redefine oauth-curl-retrieve to take extra-curl-args and to echo the curl command
 (defun oauth-curl-retrieve (url)
@@ -560,3 +583,8 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
         (set-buffer-modified-p nil))
       (when (or (eq t visit) (eq nil visit) (stringp visit))
         (message "Wrote %s" filename))))
+
+;; Misc
+
+(defun dropbox-handle-process-file (program &optional infile buffer display &rest args)
+  nil)
