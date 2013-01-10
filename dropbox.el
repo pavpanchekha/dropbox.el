@@ -52,7 +52,7 @@ string: \"%\" followed by two lowercase hex digits."
                        "/1/" name)))
     (if path
         (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" (dropbox-strip-file-name-prefix path))))
-      path)))
+      ppath)))
 
 (defvar dropbox-cache '())
 (defvar dropbox-cache-timeout 60)
@@ -122,9 +122,16 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-http-success-p (code)
   (and (>= (cadr code) 200) (< (cadr code) 300)))
 
+(defun dropbox-http-down-p (code)
+  (and (>= (cadr code) 500) (< (cadr code) 600)))
+
 (defun dropbox-get-json (name &optional path)
   (or (dropbox-cached name path)
       (with-current-buffer (dropbox-get name path)
+        (let ((code (dropbox-get-http-code buf)))
+          (if (dropbox-http-down-p code)
+              (error "Dropbox seems to be having problems: %d %s"
+                     (cadr code) (caddr code))))
         (beginning-of-line)
         (let ((json-false nil))
           (dropbox-cache name path (json-read))))))
@@ -135,6 +142,10 @@ string: \"%\" followed by two lowercase hex digits."
   (let ((buf (with-default-directory "~/"
                (oauth-post-url dropbox-access-token (dropbox-url name path) args))))
     (with-current-buffer buf
+      (let ((code (dropbox-get-http-code buf)))
+        (if (dropbox-http-down-p code)
+            (error "Dropbox seems to be having problems: %d %s"
+                   (cadr code) (caddr code))))
       (beginning-of-line)
       (let ((json-false nil))
         (json-read)))))
