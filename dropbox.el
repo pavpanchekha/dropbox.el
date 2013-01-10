@@ -106,19 +106,21 @@ string: \"%\" followed by two lowercase hex digits."
   (with-default-directory "~/"
     (oauth-fetch-url dropbox-access-token (dropbox-url name path))))
 
-(defun dropbox-get-http-code (name &optional path)
+(defun dropbox-get-http-code (buf)
   (save-excursion
-    (let ((buf (dropbox-get name path)))
-      (with-current-buffer buf
-        (beginning-of-buffer)
-        (end-of-line)
-        (let ((rline (buffer-substring (point-min) (point))))
-          (string-match (concat "^\\(HTTP/[\\.[:digit:]]+\\)" "[[:space:]]+"
-                                "\\([[:digit:]]\\{3\\}\\)" "[[:space:]]+"
-                                "\\(.*\\)$")
-                        rline)
-          (list (match-string 1 rline) (string-to-number (match-string 2 rline))
-                (match-string 3 rline)))))))
+    (with-current-buffer buf
+      (beginning-of-buffer)
+      (end-of-line)
+      (let ((rline (buffer-substring (point-min) (point))))
+        (string-match (concat "^\\(HTTP/[\\.[:digit:]]+\\)" "[[:space:]]+"
+                              "\\([[:digit:]]\\{3\\}\\)" "[[:space:]]+"
+                              "\\(.*\\)$")
+                      rline)
+        (list (match-string 1 rline) (string-to-number (match-string 2 rline))
+              (match-string 3 rline))))))
+
+(defun dropbox-http-success-p (code)
+  (and (>= (cadr code) 200) (< (cadr code) 300)))
 
 (defun dropbox-get-json (name &optional path)
   (or (dropbox-cached name path)
@@ -394,20 +396,22 @@ NOSORT is useful if you plan to sort the result yourself."
   ; TODO: Fails on images with switch to deleted buffer
   ; TODO: implement replace
   (barf-if-buffer-read-only)
-  (let ((buf (current-buffer))
-	(respbuf
-	 (oauth-fetch-url dropbox-access-token
-			  (dropbox-url "files" filename))))
-    (switch-to-buffer respbuf)
-    (beginning-of-buffer)
-    (re-search-forward "\r\n\r\n")
-    (delete-region (point-min) (point))
-    (switch-to-buffer buf)
-    (save-excursion (insert-buffer-substring respbuf beg end))
+  (let* ((buf (current-buffer))
+         (respbuf (dropbox-get "files" filename))
+         (http-code (dropbox-get-http-code respbuf)))
+    (if (dropbox-http-success-p http-code)
+        (progn
+          (switch-to-buffer respbuf)
+          (beginning-of-buffer)
+          (re-search-forward "\r\n\r\n")
+          (delete-region (point-min) (point))
+          (switch-to-buffer buf)
+          (save-excursion (insert-buffer-substring respbuf beg end)))
+      (switch-to-buffer buf))
     (when visit
-	(setf buffer-file-name filename)
-	(setf buffer-read-only (not (file-writable-p filename)))
-	(set-buffer-modified-p nil))))
+      (setf buffer-file-name filename)
+      (setf buffer-read-only (not (file-writable-p filename)))
+      (set-buffer-modified-p nil))))
 
 (defun dropbox-handle-file-writable-p (filename)
   t)
@@ -555,4 +559,4 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
       (when (or (eq t visit) (stringp visit))
         (set-buffer-modified-p nil))
       (when (or (eq t visit) (eq nil visit) (stringp visit))
-        (message "Wrote %s" filename)))))
+        (message "Wrote %s" filename))))
