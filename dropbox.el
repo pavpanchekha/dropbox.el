@@ -3,6 +3,13 @@
 ;;
 ;; Based on emacs-yammer (https://github.com/psanford/emacs-yammer/blob/master/yammer.el)
 
+;; TODO
+; - Return permissions other than -rwx------ if folder has shares
+; - dropbox-handle-set-visited-file-modtime might need actual implementation
+; - Switching to deleted buffer on file open
+; - Implement `replace` on insert-file-contents
+; - Implement `lockname` and `mustbenew` on write-region
+; - Default directory on open /db: buffers should be their /db: parent
 
 (require 'oauth)
 (require 'json)
@@ -253,6 +260,7 @@ string: \"%\" followed by two lowercase hex digits."
     (directory-files . dropbox-handle-directory-files)
     (file-name-all-completions . dropbox-handle-file-name-all-completions)
     (file-name-completion . dropbox-handle-file-name-completion)
+    (make-directory . dropbox-handle-make-directory)
 
     ; File Contents
     (insert-file-contents . dropbox-handle-insert-file-contents)
@@ -281,7 +289,6 @@ string: \"%\" followed by two lowercase hex digits."
     (copy-file . dropbox-handle-copy-file)
     (copy-directory . dropbox-handle-copy-directory)
     (rename-file . dropbox-handle-rename-file)
-    (make-directory . dropbox-handle-make-directory)
     (delete-directory . dropbox-handle-delete-directory)
     (delete-file . dropbox-handle-delete-file)
     (executable-find . dropbox-handle-executable-find)
@@ -498,6 +505,17 @@ NOSORT is useful if you plan to sort the result yourself."
         (predicate (if (eq predicate 'file-exists-p) nil predicate)))
     (try-completion file files predicate)))
 
+(defun dropbox-handle-make-directory (dir &optional parents)
+  "Create the directory DIR and, if PARENT is non-nil, all parents"
+
+  (if (or parents
+          (let ((parent (file-name-directory (directory-file-name dir))))
+            (and (file-exists-p parent) (file-directory-p parent))))
+      (dropbox-cache "metadata" dir
+                     (dropbox-post
+                      "fileops/create_folder" nil
+                      `(("root" . "dropbox")
+                        ("path" . ,(dropbox-strip-file-name-prefix dir)))))))
 ;; File contents
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
