@@ -30,12 +30,14 @@
 (setf oauth-nonce-function (function oauth-internal-make-nonce))
 (defvar dropbox-prefix "/db:")
 
+(defvar dropbox-message-verbose nil)
+
 (defun dropbox-message (fmt-string &rest args)
-  (apply 'message fmt-string args))
-  ;nil)
+  (when dropbox-message-verbose
+    (apply 'message fmt-string args)))
 
 (defconst url-non-sanitized-chars
-  (append url-unreserved-chars '(?/ ?:)))
+  (delete ?~ (append url-unreserved-chars '(?/ ?:))))
 
 (defun url-hexify-url (string)
   "Return a new string that is STRING URI-encoded.
@@ -112,10 +114,16 @@ string: \"%\" followed by two lowercase hex digits."
          (cd ,old-dir)
          ,val))))
 
+(defvar curl-tracefile nil)
+
 (defun dropbox-get (name &optional path)
   (dropbox-message "Requesting %s for %s" name path)
   (with-default-directory "~/"
-    (oauth-fetch-url dropbox-access-token (dropbox-url name path))))
+    (let ((extra-curl-args (if (and curl-tracefile
+                                    (not extra-curl-args))
+                               `("--trace" ,curl-tracefile)
+                               extra-curl-args)))
+      (oauth-fetch-url dropbox-access-token (dropbox-url name path)))))
 
 (defun dropbox-get-http-code (buf)
   (save-excursion
@@ -643,6 +651,52 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
         (set-buffer-modified-p nil))
       (when (or (eq t visit) (eq nil visit) (stringp visit))
         (message "Wrote %s" filename))))
+
+(defun dropbox-handle-insert-directory
+  (filename switches &optional wildcard full-directory-p)
+  "Like `insert-directory' for Dropbox files. Code adapted from
+`tramp-sh-handle-insert-directory'."
+
+  (setq filename (expand-file-name filename))
+  (let ((localname (dropbox-strip-file-name-prefix filename)))
+    (when (stringp switches)
+      (setq switches (split-string switches)))
+    (unless full-directory-p
+      (setq switches (add-to-list 'switches "-d" 'append)))
+    (setq switches (mapconcat 'shell-quote-argument switches " "))
+    (dropbox-message
+     "Inserting directory `ls %s %s', wildcard %s, fulldir %s"
+     switches filename wildcard full-directory-p)
+
+    ; -rw-r--r--   1 ahaven  staff   1476 Jan  7 12:48 tramp.py
+    ; TODO: this shouldn't be using `print'
+    (if (not full-directory-p)
+        (let ((attributes (file-attributes filename 'string)))
+          (insert (format "  %s %2d %8s %8s %8d %s "
+                          (elt attributes 8)
+                          (elt attributes 1)
+                          (elt attributes 2)
+                          (elt attributes 3)
+                          (elt attributes 7)
+                          (format-time-string "%X" (elt attributes 4))))
+          (let ((fname (file-name-nondirectory (directory-file-name filename)))
+                (start (point)))
+            (insert fname)
+            (when (elt attributes 0)
+              (put-text-property start (point) 'dired-filename t))
+          (newline)))
+      (insert "  " filename) ; print directory
+      (newline)
+      (let ((acct-info (dropbox-get-json "account/info")))
+        (unless (null acct-info)
+          (let ((quota-info (cdr (assoc 'quota_info acct-info))))
+            (insert (format "total used %d available %d"
+                            (+ (cdr (assoc 'shared quota-info))
+                               (cdr (assoc 'normal quota-info)))
+                            (cdr (assoc 'quota quota-info))))
+            (newline))))
+      (loop for file in (directory-files filename t wildcard)
+            do (insert-directory file switches)))))
 
 ;; Misc
 
