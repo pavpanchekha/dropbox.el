@@ -135,7 +135,7 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-get-json (name &optional path)
   (or (dropbox-cached name path)
       (with-current-buffer (dropbox-get name path)
-        (let ((code (dropbox-get-http-code buf)))
+        (let ((code (dropbox-get-http-code (current-buffer))))
           (if (dropbox-http-down-p code)
               (error "Dropbox seems to be having problems: %d %s"
                      (cadr code) (caddr code))))
@@ -533,11 +533,11 @@ NOSORT is useful if you plan to sort the result yourself."
           (delete-region (point-min) (point))
           (switch-to-buffer buf)
           (save-excursion (insert-buffer-substring respbuf beg end)))
-      (switch-to-buffer buf))
+      (switch-to-buffer buf)
+      (set-buffer-modified-p nil))
     (when visit
       (setf buffer-file-name filename)
-      (setf buffer-read-only (not (file-writable-p filename)))
-      (set-buffer-modified-p nil))))
+      (setf buffer-read-only (not (file-writable-p filename))))))
 
 ; Redefine oauth-curl-retrieve to take extra-curl-args and to echo the curl command
 (defun oauth-curl-retrieve (url)
