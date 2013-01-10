@@ -132,7 +132,7 @@ string: \"%\" followed by two lowercase hex digits."
   (dropbox-message "Requesting %s for %s" name path)
   (let ((buf (with-default-directory "~/"
                (oauth-post-url dropbox-access-token (dropbox-url name path) args))))
-    (progn (switch-to-buffer buf)
+    (with-current-buffer buf
       (beginning-of-line)
       (let ((json-false nil))
         (json-read)))))
