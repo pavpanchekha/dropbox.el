@@ -10,6 +10,9 @@
 ; - Implement `replace` on insert-file-contents
 ; - Implement `lockname` and `mustbenew` on write-region
 ; - Default directory on open /db: buffers should be their /db: parent
+; - Implement perma-trashing files
+; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
+; - Figure out why TRASH is not passed to DELETE-DIRECTORY
 
 (require 'oauth)
 (require 'json)
@@ -516,6 +519,32 @@ NOSORT is useful if you plan to sort the result yourself."
                       "fileops/create_folder" nil
                       `(("root" . "dropbox")
                         ("path" . ,(dropbox-strip-file-name-prefix dir)))))))
+
+(defun dropbox-handle-delete-file (filename &optional trash)
+  "Delete file name FILENAME.  If TRASH is nil, permanently delete it."
+
+  (if trash
+      (dropbox-cache "metadata" filename
+                     (dropbox-post "fileops/delete" nil
+                                   `(("root" . "dropbox")
+                                     ("path" . ,(dropbox-strip-file-name-prefix
+                                                 filename)))))
+    (error "Perma-trashing files not yet implemented")))
+
+(defun dropbox-handle-delete-directory (directory &optional recursive trash)
+  "Delete the directory DIRECTORY.  If TRASH is nil, permanently delete it.
+   If RECURSIVE is nil, throw an error if the directory has contents"
+
+  (if (not recursive)
+      (error "Non-recursive directory delete not yet implemented")
+    (if nil ;(not trash) ; Emacs passes only one argument from delete-directory
+        (error "Perma-trashing directories not yet implemented")
+      (dropbox-cache "metadata" directory
+                     (dropbox-post "fileops/delete" nil
+                                   `(("root" . "dropbox")
+                                     ("path" . ,(dropbox-strip-file-name-prefix
+                                                 directory))))))))
+
 ;; File contents
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
