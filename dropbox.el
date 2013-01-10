@@ -92,9 +92,19 @@ string: \"%\" followed by two lowercase hex digits."
 
   (setf dropbox-cache '()))
 
+(defmacro with-default-directory (dir &rest body)
+  (declare (indent 1))
+  (let ((old-dir (gensym)) (val (gensym)))
+    `(let ((,old-dir default-directory))
+       (cd ,dir)
+       (let ((,val (progn ,@body)))
+         (cd ,old-dir)
+         ,val))))
+
 (defun dropbox-get (name &optional path)
   (dropbox-message "Requesting %s for %s" name path)
-  (oauth-fetch-url dropbox-access-token (dropbox-url name path)))
+  (with-default-directory "~/"
+    (oauth-fetch-url dropbox-access-token (dropbox-url name path))))
 
 (defun dropbox-get-http-code (name &optional path)
   (save-excursion
@@ -120,10 +130,12 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-post (name &optional path args)
   (dropbox-uncache name path)
   (dropbox-message "Requesting %s for %s" name path)
-  (with-current-buffer (oauth-post-url dropbox-access-token (dropbox-url name path) args)
-    (beginning-of-line)
-    (let ((json-false nil))
-      (json-read))))
+  (let ((buf (with-default-directory "~/"
+               (oauth-post-url dropbox-access-token (dropbox-url name path) args))))
+    (progn (switch-to-buffer buf)
+      (beginning-of-line)
+      (let ((json-false nil))
+        (json-read)))))
 
 (defun dropbox-error-p (json)
   (assoc 'error json))
@@ -379,6 +391,7 @@ NOSORT is useful if you plan to sort the result yourself."
             0)))))
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
+  ; TODO: Fails on images with switch to deleted buffer
   ; TODO: implement replace
   (barf-if-buffer-read-only)
   (let ((buf (current-buffer))
@@ -526,16 +539,20 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
   If MUSTBENEW is neither nil nor `excl', that means ask for
   confirmation before overwriting, but do go ahead and overwrite the file
   if the user confirms."
+
   ; TODO: implement lockname and mustbenew
   (assert (not append)) ; TODO: implement append
+
   (let ((localfile (make-auto-save-file-name)))
     (write-region start end localfile nil 1)
     (let ((resp
-           (let ((extra-curl-args `("-d" ,(concat "@" localfile)))
-                 (url-request-extra-headers '(("Content-Type" . "application/octet-stream"))))
-             dropbox-post "files_put" (dropbox-strip-file-name-prefix filename) '())))
-    (if (stringp visit) (set-visited-file-name visit))
-    (if (or (= t visit) (stringp visit))
-	(set-buffer-modified-p nil))
-    (if (or (= t visit) (= t nil) (stringp visit))
-	(message "Wrote %s" filename)))))
+           (save-excursion
+             (let ((extra-curl-args `("--data-binary" ,(concat "@" localfile)))
+                   (url-request-extra-headers '(("Content-Type" . "application/octet-stream"))))
+             (dropbox-post "files_put" filename '()))))))
+      (when (stringp visit)
+        (set-visited-file-name visit))
+      (when (or (eq t visit) (stringp visit))
+        (set-buffer-modified-p nil))
+      (when (or (eq t visit) (eq nil visit) (stringp visit))
+        (message "Wrote %s" filename)))))
