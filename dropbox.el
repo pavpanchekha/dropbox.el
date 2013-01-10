@@ -316,6 +316,7 @@ string: \"%\" followed by two lowercase hex digits."
     (start-file-process . dropbox-handle-start-file-process)
     (shell-command . dropbox-handle-shell-command)
     (insert-directory . dropbox-handle-insert-directory)
+    (dired-insert-directory . dropbox-handle-dired-insert-directory)
     (dired-compress-file . dropbox-handle-dired-compress-file)
     (dired-recursive-delete-directory
      . dropbox-handle-dired-recursive-delete-directory)
@@ -695,9 +696,13 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
                                (cdr (assoc 'normal quota-info)))
                             (cdr (assoc 'quota quota-info))))
             (newline))))
-      (loop for file in (directory-files filename t wildcard)
+      (loop for file in (if wildcard
+                            (directory-files (file-name-directory filename) t filename)
+                          (directory-files filename t))
             do (insert-directory file switches)))))
 
+(defun dropbox-handle-dired-insert-directory (dir switches &optional file-list wildcard hdr)
+  (dropbox-handle-insert-directory dir switches wildcard t))
 ;; Misc
 
 (defun dropbox-handle-process-file (program &optional infile buffer display &rest args)
