@@ -86,7 +86,8 @@ string: \"%\" followed by two lowercase hex digits."
              (not (dropbox-error-p value))
              (assoc 'contents value))
         (loop for ent across (cdr (assoc 'contents value))
-              for path = (cdr (assoc 'path ent))
+              for path = (concat "/db:"
+                                 (string-strip-prefix "/" (cdr (assoc 'path ent))))
               for is-dir = (cdr (assoc 'is_dir ent))
               if (not is-dir)
               do (dropbox-cache "metadata" path ent)))
@@ -389,7 +390,8 @@ string: \"%\" followed by two lowercase hex digits."
 
   (let ((resp
          (dropbox-get-json "metadata" filename)))
-    (not (dropbox-error-p resp))))
+    (and (not (dropbox-error-p resp))
+         (not (assoc 'is_deleted resp)))))
 
 (defun dropbox-handle-file-newer-than-file-p (file1 file2)
   ; these files might not both be dropbox files
@@ -554,7 +556,7 @@ NOSORT is useful if you plan to sort the result yourself."
   (let* ((buf (current-buffer))
          (respbuf (dropbox-get "files" filename))
          (http-code (dropbox-get-http-code respbuf)))
-    (if (dropbox-http-success-p http-code)
+    (if (file-exists-p filename)
         (progn
           (switch-to-buffer respbuf)
           (beginning-of-buffer)
