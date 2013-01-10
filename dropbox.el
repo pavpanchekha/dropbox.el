@@ -21,8 +21,8 @@
 (defvar dropbox-prefix "/db:")
 
 (defun dropbox-message (fmt-string &rest args)
-  ;(apply 'message fmt-string args))
-  nil)
+  (apply 'message fmt-string args))
+  ;nil)
 
 (defconst url-non-sanitized-chars
   (append url-unreserved-chars '(?/ ?:)))
@@ -458,8 +458,7 @@ NOSORT is useful if you plan to sort the result yourself."
   nil)
 
 (defun dropbox-handle-file-modes (filename)
-  ; TODO: implement me!
-  493) ; 493 = 0b111101101 is rwxr-xr-x
+  448) ; 448 = 0b111000000 is rwx------
 
 (defun dropbox-handle-vc-registered (file)
   nil)
@@ -469,3 +468,47 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-find-backup-file-name (fn)
   nil)
+
+(defun dropbox-handle-write-region (start end filename &optional
+					  append visit lockname mustbenew)
+  "Write current region into specified file.
+When called from a program, requires three arguments:
+START, END and FILENAME.  START and END are normally buffer positions
+specifying the part of the buffer to write.
+If START is nil, that means to use the entire buffer contents.
+If START is a string, then output that string to the file
+instead of any buffer contents; END is ignored.
+
+Optional fourth argument APPEND if non-nil means
+  append to existing file contents (if any).  If it is an integer,
+  seek to that offset in the file before writing.
+Optional fifth argument VISIT, if t or a string, means
+  set the last-save-file-modtime of buffer to this file's modtime
+  and mark buffer not modified.
+If VISIT is a string, it is a second file name;
+  the output goes to FILENAME, but the buffer is marked as visiting VISIT.
+  VISIT is also the file name to lock and unlock for clash detection.
+If VISIT is neither t nor nil nor a string,
+  that means do not display the \"Wrote file\" message.
+The optional sixth arg LOCKNAME, if non-nil, specifies the name to
+  use for locking and unlocking, overriding FILENAME and VISIT.
+The optional seventh arg MUSTBENEW, if non-nil, insists on a check
+  for an existing file with the same name.  If MUSTBENEW is `excl',
+  that means to get an error if the file already exists; never overwrite.
+  If MUSTBENEW is neither nil nor `excl', that means ask for
+  confirmation before overwriting, but do go ahead and overwrite the file
+  if the user confirms."
+  ; TODO: implement lockname and mustbenew
+  (assert (not append)) ; TODO: implement append
+  (let ((localfile (make-auto-save-file-name)))
+    (write-region start end localfile nil 1)
+    (let ((resp
+           (let ((extra-curl-args `("-d" ,(concat "@" localfile)))
+                 (url-request-extra-headers '(("Content-Type" . "application/octet-stream"))))
+             dropbox-post "files_put" (dropbox-strip-file-name-prefix filename) '())))
+    (if (stringp visit) (set-visited-file-name visit))    
+    (if (or (= t visit) (stringp visit))
+	(set-buffer-modified-p nil))
+    (if (or (= t visit) (= t nil) (stringp visit))
+	(message "Wrote %s" filename)))))
+	    
