@@ -176,12 +176,13 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-handler (operation &rest args)
   "Handles IO operations to Dropbox files"
 
-  (dropbox-message "Dropbox'ing operation %s for %s" operation args)
+  (if (not (eq operation 'file-remote-p))
+      (dropbox-message "Dropbox'ing operation %s for %s" operation args))
 
   (let ((handler (cdr (assoc operation dropbox-handler-alist))))
     (if handler
         (let ((retval (apply handler args)))
-          (dropbox-message "... returning %s" retval)
+          (if (not (eq operation 'file-remote-p)) (dropbox-message "... returning %s" retval))
           retval)
       (let* ((inhibit-file-name-handlers
               `(dropbox-handler
@@ -469,6 +470,33 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-handle-find-backup-file-name (fn)
   nil)
 
+; Redefine oauth-curl-retrieve to take extra-curl-args and to echo the curl command
+(defun oauth-curl-retrieve (url)
+  "Retrieve via curl"
+  (url-gc-dead-buffers)
+  (set-buffer (generate-new-buffer " *oauth-request*"))
+  (let ((curl-args `("-s" ,(when oauth-curl-insecure "-k")
+                     "-X" ,url-request-method
+                     "-i" ,url
+                     ,@(when oauth-post-vars-alist
+                         (apply
+                          'append
+                          (mapcar
+                           (lambda (pair)
+                             (list
+                              "-d"
+                              (concat (car pair) "="
+                                      (oauth-hexify-string (cdr pair)))))
+                           oauth-post-vars-alist)))
+                     ,@(oauth-headers-to-curl url-request-extra-headers)
+                     ,@extra-curl-args)))
+    (message "curl-args: %s" curl-args)
+    (apply 'call-process "curl" nil t nil curl-args))
+  (url-mark-buffer-as-dead (current-buffer))
+  (current-buffer))
+
+(setf extra-curl-args nil)
+
 (defun dropbox-handle-write-region (start end filename &optional
 					  append visit lockname mustbenew)
   "Write current region into specified file.
@@ -506,9 +534,8 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
            (let ((extra-curl-args `("-d" ,(concat "@" localfile)))
                  (url-request-extra-headers '(("Content-Type" . "application/octet-stream"))))
              dropbox-post "files_put" (dropbox-strip-file-name-prefix filename) '())))
-    (if (stringp visit) (set-visited-file-name visit))    
+    (if (stringp visit) (set-visited-file-name visit))
     (if (or (= t visit) (stringp visit))
 	(set-buffer-modified-p nil))
     (if (or (= t visit) (= t nil) (stringp visit))
 	(message "Wrote %s" filename)))))
-	    
