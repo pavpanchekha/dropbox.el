@@ -328,8 +328,7 @@ non-nil."
         retval))))
 
 (defconst dropbox-handler-alist
-  '(;; Handled
-    ; Path parsing
+  '(; Path parsing
     (file-name-directory . dropbox-handle-file-name-directory)
     (file-name-nondirectory . dropbox-handle-file-name-nondirectory)
     (expand-file-name . dropbox-handle-expand-file-name)
@@ -346,7 +345,9 @@ non-nil."
     (file-executable-p . dropbox-handle-file-executable-p)
     (file-exists-p . dropbox-handle-file-exists-p)
     (file-newer-than-file-p . dropbox-handle-file-newer-than-file-p)
+    (file-ownership-preserved-p . dropbox-handle-file-ownership-preserved-p)
     (file-readable-p . dropbox-handle-file-readable-p)
+    (file-regular-p . dropbox-handle-file-regular-p)
     (file-remote-p . dropbox-handle-file-remote-p)
     (file-symlink-p . dropbox-handle-file-symlink-p)
     (file-writable-p . dropbox-handle-file-writable-p)
@@ -377,10 +378,6 @@ non-nil."
     (process-file . dropbox-handle-process-file)
 
     ;; Unhandled
-    ; Predicates
-    (file-ownership-preserved-p . dropbox-handle-file-ownership-preserved-p)
-    (file-regular-p . dropbox-handle-file-regular-p)
-
     ; Attributes
     (set-file-modes . dropbox-handle-set-file-modes)
     (set-file-times . dropbox-handle-set-file-times)
@@ -508,6 +505,18 @@ non-nil."
 	    t)
 	nil))))
 
+(defun dropbox-handle-file-owner-preserved-p (file)
+  "Files have only one owner in Dropbox, so ownership is always preserved"
+  t)
+
+(defun dropbox-handle-file-readable-p (filename)
+  "Files in Dropbox are always readable"
+  t)
+
+(defun dropbox-handle-file-regular-p (file)
+  "Files in Dropbox are always regular; directories are not"
+  (not (file-directory-p file)))
+
 (defun dropbox-handle-file-remote-p (file &optional identification connected)
   "Test whether FILE is a remote file"
 
@@ -524,9 +533,6 @@ non-nil."
 
 (defun dropbox-handle-file-symlink-p (filename)
   nil)
-
-(defun dropbox-handle-file-readable-p (filename)
-  t)
 
 (defun dropbox-handle-file-writable-p (filename)
   t)
