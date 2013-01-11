@@ -241,9 +241,6 @@ non-nil."
   (dropbox-un-cache name path)
   (dropbox-message "Requesting %s for %s" name path)
 
-  (if (not (member name dropbox-post-not-locale))
-      (push (cons "locale" dropbox-locale) args))
-
   (let* ((oauth-nonce-function (function oauth-internal-make-nonce))
          (buf (with-default-directory "~/"
                (oauth-post-url dropbox-access-token
