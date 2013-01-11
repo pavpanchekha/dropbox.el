@@ -20,6 +20,7 @@
 ; - Use locale on authenticating the app (oauth library has issues)
 ; - Request confirmation properly for OK-IF-ALREADY-EXISTS in move and copy
 ; - Moving files works, but Dired thinks it doesn't
+; - DIRED-COMPRESS-FILE is not atomic.  Use /sync/batch
 
 (require 'oauth)
 (require 'json)
@@ -367,16 +368,20 @@ non-nil."
 
     ; Directory Contents
     (directory-files . dropbox-handle-directory-files)
+    (directory-files-and-attributes
+     . dropbox-handle-directory-files-and-attributes)
     (file-name-all-completions . dropbox-handle-file-name-all-completions)
     (file-name-completion . dropbox-handle-file-name-completion)
+    (executable-find . dropbox-handle-executable-find)
 
     (make-directory . dropbox-handle-make-directory)
     (delete-file . dropbox-handle-delete-file)
     (delete-directory . dropbox-handle-delete-directory)
     (copy-file . dropbox-handle-copy-file)
+    (copy-directory . dropbox-handle-copy-directory)
     (rename-file . dropbox-handle-rename-file)
     (make-symbolic-link . dropbox-handle-make-symbolic-link)
-    (executable-find . dropbox-handle-executable-find)
+    (add-name-to-file . dropbox-handle-add-name-to-file)
 
     (insert-directory . dropbox-handle-insert-directory)
     (dired-insert-directory . dropbox-handle-dired-insert-directory)
@@ -384,26 +389,16 @@ non-nil."
 
     ; File Contents
     (insert-file-contents . dropbox-handle-insert-file-contents)
-    (write-region . dropbox-handle-write-region)
     (file-local-copy . dropbox-handle-file-local-copy)
-
-    ; Misc
-    (process-file . dropbox-handle-process-file)
-    (start-file-process . dropbox-handle-start-file-process)
-    (shell-command . dropbox-handle-shell-command)
-
-    ;; Unhandled
-    ; Directory Contents
-    (directory-files-and-attributes
-     . dropbox-handle-directory-files-and-attributes)
-    (copy-directory . dropbox-handle-copy-directory)
+    (dired-compress-file . dropbox-handle-dired-compress-file)
+    (write-region . dropbox-handle-write-region)
 
     ; Misc
     (load . dropbox-handle-load)
-    (add-name-to-file . dropbox-handle-add-name-to-file)
-    (dired-compress-file . dropbox-handle-dired-compress-file)
-    (dired-recursive-delete-directory
-     . dropbox-handle-dired-recursive-delete-directory)))
+
+    (process-file . dropbox-handle-process-file)
+    (start-file-process . dropbox-handle-start-file-process)
+    (shell-command . dropbox-handle-shell-command)))
 
 ;; Path Parsing
 
@@ -479,6 +474,12 @@ non-nil."
       (if (dropbox-error-p resp)
           nil
         (and (cdr (assoc 'is_dir resp)) (not (assoc 'is_deleted resp)))))))
+
+(defun dropbox-parent (filename)
+  "Get the name of the directory containing FILENAME, even if
+FILENAME names a directory"
+
+  (file-name-directory (directory-file-name filename)))
 
 (defun dropbox-handle-file-executable-p (filename)
   (file-directory-p filename))
@@ -626,6 +627,16 @@ NOSORT is useful if you plan to sort the result yourself."
 	    nil)))
     (if nosort unsorted (sort unsorted 'string-lessp))))
 
+(defun dropbox-handle-directory-files-and-attributes (directory &optional full match nosort id-format)
+  (let ((files (directory-files directory full match nosort)))
+    (list*
+     (cons "." (file-attributes directory))
+     (cons ".." (file-attributes (dropbox-parent directory)))
+     (loop for file in files
+           for attrs = (file-attributes (concat (file-name-as-directory directory)
+                                                file) id-format)
+           collect (cons file attrs)))))
+
 (defun dropbox-handle-file-name-all-completions (file directory &optional predicate)
   "Complete file name FILE in directory DIRECTORY.
    Returns string if that string is the longest common prefix to files that start with FILE;
@@ -649,7 +660,7 @@ NOSORT is useful if you plan to sort the result yourself."
   "Create the directory DIR and, if PARENT is non-nil, all parents"
 
   (if (or parents
-          (let ((parent (file-name-directory (directory-file-name dir))))
+          (let ((parent (dropbox-parent dir)))
             (and (file-exists-p parent) (file-directory-p parent))))
       (dropbox-cache "metadata" dir
                      (dropbox-post
@@ -754,6 +765,15 @@ NOSORT is useful if you plan to sort the result yourself."
    ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
     (dropbox-upload file newname))))
 
+(defun dropbox-handle-copy-directory (directory newname &optional keep-time
+                                                parents copy-contents)
+  (cond
+   ((and (dropbox-file-p file) (dropbox-file-p newname))
+    (if parents (make-directory (dropbox-parent newname) parents))
+    (copy-file directory newname nil keep-time parents copy-contents))
+   (t
+    (error "Copying directories between the local storage and Dropbox is not supported"))))
+
 (defun dropbox-handle-rename-file (file newname &optional ok-if-already-exists)
   "Renames FILE to NEWNAME.  If OK-IF-ALREADY-EXISTS is nil, signal an error if
 NEWNAME already exists.  Note that the move is atomic if both FILE and NEWNAME
@@ -779,6 +799,10 @@ are /db: files, but otherwise is not necessarily atomic."
 (defun dropbox-handle-make-symbolic-link (filename linkname
                                                    &optional ok-if-already-exists)
   (error "Dropbox cannot hold symbolic links"))
+
+(defun dropbox-handle-add-name-to-file (file newname
+                                             &optional ok-if-already-exists)
+  (error "Dropbox cannot handle hard links"))
 
 (defun dropbox-handle-executable-find (command)
   "Fail to find any commands"
@@ -857,6 +881,17 @@ are /db: files, but otherwise is not necessarily atomic."
           (write-region (point) (point-max) newname)))
       newname)))
 
+(defun dropbox-handle-dired-compress-file (file)
+  "Compress a file in Dropbox.  Super-inefficient."
+
+  (let* ((temp (file-local-copy file))
+         (temp.z (dired-compress-file file))
+         (suffix (if (string-prefix-p temp temp.z)
+                     (string-strip-prefix temp temp.z)
+                   ".gz")))
+    (dropbox-upload temp.z (concat file suffix))
+    (delete-file file)))
+
 (defun dropbox-handle-write-region (start end filename &optional
 					  append visit lockname mustbenew)
   "Write current region into specified file.
@@ -912,3 +947,8 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
 
 (defun dropbox-handle-shell-command (command &optional output-buffer error-buffer)
   nil)
+
+(defun dropbox-handle-load (file &optional noerror nomessage nosuffix must-suffix)
+  "Loads a Lisp file from Dropbox, by copying it to a temporary"
+
+  (load (file-local-copy file) noerror nomessage nosuffix must-suffix))
