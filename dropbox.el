@@ -963,3 +963,5 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
   "Loads a Lisp file from Dropbox, by copying it to a temporary"
 
   (load (file-local-copy file) noerror nomessage nosuffix must-suffix))
+
+;;; dropbox.el ends here
