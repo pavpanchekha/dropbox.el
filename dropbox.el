@@ -1,8 +1,10 @@
-;; -*- tab-width: 8 -*-
 ;; dropbox.el --- an emacs tramp backend for dropbox
-;; Copyright 2011 Pavel Panchekha <pavpanchekha@gmail.com>
-;;
-;; Based on emacs-yammer (https://github.com/psanford/emacs-yammer/blob/master/yammer.el)
+; -*- tab-width: 8 -*-
+
+; Copyright 2011 Pavel Panchekha <pavpanchekha@gmail.com>
+;           2013 Drew Haven      <ahaven@mit.edu>
+
+; Suggestion to developers: M-x occur ";;"
 
 ;; TODO
 ; - Return permissions other than -rwx------ if folder has shares
@@ -21,6 +23,8 @@
 
 (require 'oauth)
 (require 'json)
+
+;; Customization Options
 
 (defgroup dropbox nil
   "The Dropbox Emacs Client and SDK"
@@ -85,6 +89,7 @@ debugging but otherwise very intrusive."
 (defvar dropbox-cache '())
 (defvar dropbox-access-token nil)
 
+;; Utilities
 
 (defun dropbox-message (fmt-string &rest args)
   (when dropbox-verbose (apply 'message fmt-string args)))
@@ -107,16 +112,6 @@ string: \"%\" followed by two lowercase hex digits."
                string)
              ""))
 
-(defun dropbox-url (name &optional path)
-  (let ((ppath (concat "https://"
-                       (if (member name dropbox-content-apis)
-                           dropbox-api-content-host
-                         dropbox-api-host)
-                       "/1/" name)))
-    (if path
-        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" (dropbox-strip-file-name-prefix path))))
-      ppath)))
-
 (defun dropbox-strip-final-slash (path)
   (cond
    ((null path)
@@ -126,6 +121,17 @@ string: \"%\" followed by two lowercase hex digits."
    ((= (aref path (- (length path) 1)) 47)
     (substring path 0 -1))
    (t path)))
+
+(defmacro with-default-directory (dir &rest body)
+  (declare (indent 1))
+  (let ((old-dir (gensym)) (val (gensym)))
+    `(let ((,old-dir default-directory))
+       (cd ,dir)
+       (let ((,val (progn ,@body)))
+         (cd ,old-dir)
+         ,val))))
+
+;; Caching for the Dropbox API
 
 (defun dropbox-cached (name path)
   (let ((cached (assoc (cons name (dropbox-strip-final-slash path))
@@ -163,14 +169,17 @@ string: \"%\" followed by two lowercase hex digits."
 
   (setf dropbox-cache '()))
 
-(defmacro with-default-directory (dir &rest body)
-  (declare (indent 1))
-  (let ((old-dir (gensym)) (val (gensym)))
-    `(let ((,old-dir default-directory))
-       (cd ,dir)
-       (let ((,val (progn ,@body)))
-         (cd ,old-dir)
-         ,val))))
+;; Requesting URLs
+
+(defun dropbox-url (name &optional path)
+  (let ((ppath (concat "https://"
+                       (if (member name dropbox-content-apis)
+                           dropbox-api-content-host
+                         dropbox-api-host)
+                       "/1/" name)))
+    (if path
+        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" (dropbox-strip-file-name-prefix path))))
+      ppath)))
 
 (defvar curl-tracefile nil)
 
@@ -206,6 +215,9 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-http-down-p (code)
   (and (>= (cadr code) 500) (< (cadr code) 600)))
+
+(defun dropbox-error-p (json)
+  (assoc 'error json))
 
 (defun dropbox-get-json (name &optional path want-contents)
   "Get JSON for the NAME endpoint for path PATH.  The 'contents
@@ -249,8 +261,7 @@ non-nil."
       (let ((json-false nil))
         (json-read)))))
 
-(defun dropbox-error-p (json)
-  (assoc 'error json))
+;; Authentication
 
 (defun dropbox-authenticate ()
   "Get authentication token for dropbox"
@@ -285,8 +296,10 @@ non-nil."
       (kill-this-buffer)))
   dropbox-access-token)
 
+;; Hooking into Dropbox
+
 (defun dropbox-connect ()
-  "Connect to Dropbox, hacking in the Dropbox syntax into find-file"
+  "Connect to Dropbox, hacking the \"/db:\" syntax into `find-file`."
   (interactive)
 
   (dropbox-authenticate)
@@ -334,6 +347,7 @@ non-nil."
     (file-executable-p . dropbox-handle-file-executable-p)
     (file-exists-p . dropbox-handle-file-exists-p)
     (file-newer-than-file-p . dropbox-handle-file-newer-than-file-p)
+    (file-readable-p . dropbox-handle-file-readable-p)
     (file-remote-p . dropbox-handle-file-remote-p)
     (file-symlink-p . dropbox-handle-file-symlink-p)
     (file-writable-p . dropbox-handle-file-writable-p)
@@ -351,6 +365,10 @@ non-nil."
     (make-directory . dropbox-handle-make-directory)
     (delete-file . dropbox-handle-delete-file)
     (delete-directory . dropbox-handle-delete-directory)
+    (copy-file . dropbox-handle-copy-file)
+    (rename-file . dropbox-handle-rename-file)
+    (dired-uncache . dropbox-handle-dired-uncache)
+    (dired-insert-directory . dropbox-handle-dired-insert-directory)
 
     ; File Contents
     (insert-file-contents . dropbox-handle-insert-file-contents)
@@ -362,7 +380,6 @@ non-nil."
     ;; Unhandled
     ; Predicates
     (file-ownership-preserved-p . dropbox-handle-file-ownership-preserved-p)
-    (file-readable-p . dropbox-handle-file-readable-p)
     (file-regular-p . dropbox-handle-file-regular-p)
 
     ; Attributes
@@ -376,12 +393,8 @@ non-nil."
     (directory-files-and-attributes
      . dropbox-handle-directory-files-and-attributes)
     (make-symbolic-link . dropbox-handle-make-symbolic-link)
-    (copy-file . dropbox-handle-copy-file)
     (copy-directory . dropbox-handle-copy-directory)
-    (rename-file . dropbox-handle-rename-file)
     (executable-find . dropbox-handle-executable-find)
-    (dired-insert-directory . dropbox-handle-dired-insert-directory)
-    (dired-uncache . dropbox-handle-dired-uncache)
 
     ; File Contents
     (file-local-copy . dropbox-handle-file-local-copy)
@@ -646,6 +659,105 @@ NOSORT is useful if you plan to sort the result yourself."
 
   (dropbox-un-cache "metadata" dir))
 
+(defun dropbox-handle-insert-directory
+  (filename switches &optional wildcard full-directory-p)
+  "Like `insert-directory' for Dropbox files. Code adapted from
+`tramp-sh-handle-insert-directory'."
+
+  (setq filename (expand-file-name filename))
+  (let ((localname (dropbox-strip-file-name-prefix filename)))
+    (when (stringp switches)
+      (setq switches (split-string switches)))
+    (unless full-directory-p
+      (setq switches (add-to-list 'switches "-d" 'append)))
+    (setq switches (mapconcat 'shell-quote-argument switches " "))
+    (dropbox-message
+     "Inserting directory `ls %s %s', wildcard %s, fulldir %s"
+     switches filename wildcard full-directory-p)
+
+    ; TODO: look into uids, gids, and reformatting the date
+    ; -rw-r--r--   1 ahaven  staff   1476 Jan  7 12:48 tramp.py
+    (if (not full-directory-p)
+        (let ((attributes (file-attributes filename 'string)))
+          (insert (format "  %s %2d %8s %8s %8d %s "
+                          (elt attributes 8)
+                          (elt attributes 1)
+                          (elt attributes 2)
+                          (elt attributes 3)
+                          (elt attributes 7)
+                          (format-time-string "%X" (elt attributes 4))))
+          (let ((fname (file-name-nondirectory (directory-file-name filename)))
+                (start (point))
+                (isdir (elt attributes 0)))
+            (insert fname "\n")
+            (put-text-property start (- (point) 1) 'dired-filename t)))
+      (let ((acct-info (dropbox-get-json "account/info")))
+        (unless (null acct-info)
+          (let ((quota-info (cdr (assoc 'quota_info acct-info))))
+            (let ((total (cdr (assoc 'quota quota-info)))
+                  (normal (cdr (assoc 'normal quota-info)))
+                  (shared (cdr (assoc 'shared quota-info))))
+            (insert (format "  used %d available %d (%.0f%% total used)"
+                            (+ shared normal) (- total normal shared)
+                            (/ (* (+ shared normal) 100.0) total))))
+            (newline))))
+      (loop for file in (if wildcard
+                            (directory-files (file-name-directory filename) t filename)
+                          (directory-files filename t))
+            do (insert-directory file switches)))))
+
+(defun dropbox-handle-dired-insert-directory (dir switches &optional file-list
+                                                  wildcard hdr)
+  (dropbox-handle-insert-directory dir switches wildcard t))
+
+(defun dropbox-handle-copy-file (file newname &optional ok-if-already-exists
+                                      keep-time preserve-uid-gid preserve-selinux-context)
+  ; TODO: implement ok-if-already-exists parameter
+  (cond
+   ((and (dropbox-file-p file) (dropbox-file-p newname))
+    (dropbox-cache "metadata" newname
+                   (dropbox-post
+                    "fileops/copy" nil
+                    `(("root" . "dropbox")
+                      ("from_path" . ,(dropbox-strip-file-name-prefix file))
+                      ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
+   ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
+    (save-excursion
+      (let* ((buf (current-buffer))
+             (respbuf (dropbox-get "files" file))
+             (http-code (dropbox-get-http-code respbuf)))
+        (if (not (file-exists-p filename))
+            (error "File to copy doesn't exist")
+          (switch-to-buffer respbuf)
+          (beginning-of-buffer)
+          (re-search-forward "\r\n\r\n")
+          (write-region (point) (point-max) newname)
+          (switch-to-buffer buf)))))
+   ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
+    (dropbox-upload file newname))))
+
+(defun dropbox-handle-rename-file (file newname &optional ok-if-already-exists)
+  "Renames FILE to NEWNAME.  If OK-IF-ALREADY-EXISTS is nil, signal an error if
+NEWNAME already exists.  Note that the move is atomic if both FILE and NEWNAME
+are /db: files, but otherwise is not necessarily atomic."
+
+  (cond
+   ((and (dropbox-file-p file) (dropbox-file-p newname))
+    (dropbox-un-cache "metadata" file)
+    (dropbox-un-cache "metadata" (file-name-directory file))
+    (dropbox-cache "metadata" newname
+                   (dropbox-post
+                    "fileops/move" nil
+                    `(("root" . "dropbox")
+                      ("from_path" . ,(dropbox-strip-file-name-prefix file))
+                      ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
+   ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
+    (copy-file file newname ok-if-already-exists)
+    (delete-file file))
+   ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
+    (copy-file file newname ok-if-already-exists)
+    (delete-file file))))
+
 ;; File contents
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
@@ -750,104 +862,8 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
         (when (or (eq t visit) (eq nil visit) (stringp visit))
           (message "Wrote %s" filename))))))
 
-(defun dropbox-handle-insert-directory
-  (filename switches &optional wildcard full-directory-p)
-  "Like `insert-directory' for Dropbox files. Code adapted from
-`tramp-sh-handle-insert-directory'."
-
-  (setq filename (expand-file-name filename))
-  (let ((localname (dropbox-strip-file-name-prefix filename)))
-    (when (stringp switches)
-      (setq switches (split-string switches)))
-    (unless full-directory-p
-      (setq switches (add-to-list 'switches "-d" 'append)))
-    (setq switches (mapconcat 'shell-quote-argument switches " "))
-    (dropbox-message
-     "Inserting directory `ls %s %s', wildcard %s, fulldir %s"
-     switches filename wildcard full-directory-p)
-
-    ; TODO: look into uids, gids, and reformatting the date
-    ; -rw-r--r--   1 ahaven  staff   1476 Jan  7 12:48 tramp.py
-    (if (not full-directory-p)
-        (let ((attributes (file-attributes filename 'string)))
-          (insert (format "  %s %2d %8s %8s %8d %s "
-                          (elt attributes 8)
-                          (elt attributes 1)
-                          (elt attributes 2)
-                          (elt attributes 3)
-                          (elt attributes 7)
-                          (format-time-string "%X" (elt attributes 4))))
-          (let ((fname (file-name-nondirectory (directory-file-name filename)))
-                (start (point))
-                (isdir (elt attributes 0)))
-            (insert fname "\n")
-            (put-text-property start (- (point) 1) 'dired-filename t)))
-      (let ((acct-info (dropbox-get-json "account/info")))
-        (unless (null acct-info)
-          (let ((quota-info (cdr (assoc 'quota_info acct-info))))
-            (let ((total (cdr (assoc 'quota quota-info)))
-                  (normal (cdr (assoc 'normal quota-info)))
-                  (shared (cdr (assoc 'shared quota-info))))
-            (insert (format "  used %d available %d (%.0f%% total used)"
-                            (+ shared normal) (- total normal shared)
-                            (/ (* (+ shared normal) 100.0) total))))
-            (newline))))
-      (loop for file in (if wildcard
-                            (directory-files (file-name-directory filename) t filename)
-                          (directory-files filename t))
-            do (insert-directory file switches)))))
-
-(defun dropbox-handle-dired-insert-directory (dir switches &optional file-list wildcard hdr)
-  (dropbox-handle-insert-directory dir switches wildcard t))
 ;; Misc
 
 (defun dropbox-handle-process-file (program &optional infile buffer display &rest args)
   nil)
 
-(defun dropbox-handle-copy-file (file newname &optional ok-if-already-exists
-                                      keep-time preserve-uid-gid preserve-selinux-context)
-  ; TODO: implement ok-if-already-exists parameter
-  (cond
-   ((and (dropbox-file-p file) (dropbox-file-p newname))
-    (dropbox-cache "metadata" newname
-                   (dropbox-post
-                    "fileops/copy" nil
-                    `(("root" . "dropbox")
-                      ("from_path" . ,(dropbox-strip-file-name-prefix file))
-                      ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
-   ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
-    (save-excursion
-      (let* ((buf (current-buffer))
-             (respbuf (dropbox-get "files" file))
-             (http-code (dropbox-get-http-code respbuf)))
-        (if (not (file-exists-p filename))
-            (error "File to copy doesn't exist")
-          (switch-to-buffer respbuf)
-          (beginning-of-buffer)
-          (re-search-forward "\r\n\r\n")
-          (write-region (point) (point-max) newname)
-          (switch-to-buffer buf)))))
-   ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
-    (dropbox-upload file newname))))
-
-(defun dropbox-handle-rename-file (file newname &optional ok-if-already-exists)
-  "Renames FILE to NEWNAME.  If OK-IF-ALREADY-EXISTS is nil, signal an error if
-NEWNAME already exists.  Note that the move is atomic if both FILE and NEWNAME
-are /db: files, but otherwise is not necessarily atomic."
-
-  (cond
-   ((and (dropbox-file-p file) (dropbox-file-p newname))
-    (dropbox-un-cache "metadata" file)
-    (dropbox-un-cache "metadata" (file-name-directory file))
-    (dropbox-cache "metadata" newname
-                   (dropbox-post
-                    "fileops/move" nil
-                    `(("root" . "dropbox")
-                      ("from_path" . ,(dropbox-strip-file-name-prefix file))
-                      ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
-   ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
-    (copy-file file newname ok-if-already-exists)
-    (delete-file file))
-   ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
-    (copy-file file newname ok-if-already-exists)
-    (delete-file file))))
