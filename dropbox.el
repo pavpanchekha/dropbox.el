@@ -338,9 +338,11 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-handle-file-name-nondirectory (filename)
   "Return the filename component in file name FILENAME"
 
-  (if (string-match "^/db:.*/\\(.*\\)$" filename)
-      (match-string 1 filename)
-    (substring filename 4)))
+  (cond
+   ((string= filename "/db:") "/")
+   ((string-match "^/db:.*/\\(.*\\)$" filename)
+    (match-string 1 filename))
+   (else (substring filename 4))))
 
 (defun dropbox-handle-expand-file-name (filename &optional default-directory)
   "Return the canonicalized, absolute version of FILENAME"
@@ -378,7 +380,7 @@ string: \"%\" followed by two lowercase hex digits."
   (make-temp-file (file-name-nondirectory buffer-file-name)))
 
 (defun dropbox-handle-unhandled-file-name-directory (filename)
-  nil)
+  (file-name-directory filename))
 
 ;; Predicates
 
@@ -431,6 +433,9 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defun dropbox-handle-file-symlink-p (filename)
   nil)
+
+(defun dropbox-handle-file-readable-p (filename)
+  t)
 
 (defun dropbox-handle-file-writable-p (filename)
   t)
