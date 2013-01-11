@@ -718,10 +718,12 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
       (let ((acct-info (dropbox-get-json "account/info")))
         (unless (null acct-info)
           (let ((quota-info (cdr (assoc 'quota_info acct-info))))
-            (insert (format "total used %d available %d"
-                            (+ (cdr (assoc 'shared quota-info))
-                               (cdr (assoc 'normal quota-info)))
-                            (cdr (assoc 'quota quota-info))))
+            (let ((total (cdr (assoc 'quota quota-info)))
+                  (normal (cdr (assoc 'normal quota-info)))
+                  (shared (cdr (assoc 'shared quota-info))))
+            (insert (format "used %d available %d (%.0f%% total used)"
+                            (+ shared normal) (- total normal shared)
+                            (/ (* (+ shared normal) 100.0) total))))
             (newline))))
       (loop for file in (if wildcard
                             (directory-files (file-name-directory filename) t filename)
