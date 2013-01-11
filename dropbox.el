@@ -12,7 +12,6 @@
 ; - Switching to deleted buffer on file open
 ; - Implement `replace` on insert-file-contents
 ; - Implement `lockname` and `mustbenew` on write-region
-; - Default directory on open /db: buffers should be their /db: parent
 ; - Implement perma-trashing files
 ; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
 ; - Figure out why TRASH is not passed to DELETE-DIRECTORY
@@ -125,12 +124,8 @@ string: \"%\" followed by two lowercase hex digits."
 
 (defmacro with-default-directory (dir &rest body)
   (declare (indent 1))
-  (let ((old-dir (gensym)) (val (gensym)))
-    `(let ((,old-dir default-directory))
-       (cd ,dir)
-       (let ((,val (progn ,@body)))
-         (cd ,old-dir)
-         ,val))))
+  `(let ((default-directory ,dir))
+       ,@body))
 
 ;; Caching for the Dropbox API
 
