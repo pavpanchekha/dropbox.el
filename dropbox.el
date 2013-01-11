@@ -17,7 +17,6 @@
 ; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
 ; - Figure out why TRASH is not passed to DELETE-DIRECTORY
 ; - "This file has auto-save data"
-; - Actually use locale
 ; - Use locale on authenticating the app (oauth library has issues)
 ; - Request confirmation properly for OK-IF-ALREADY-EXISTS in move and copy
 
