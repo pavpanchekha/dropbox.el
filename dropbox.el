@@ -1,30 +1,41 @@
-;; dropbox.el --- an emacs tramp backend for dropbox
-; -*- tab-width: 8 -*-
+;;; dropbox.el --- an emacs tramp backend for dropbox
 
-; Copyright 2011 Pavel Panchekha <pavpanchekha@gmail.com>
-;           2013 Drew Haven      <ahaven@mit.edu>
+;; Copyright (C) 2011 Pavel Panchekha <me@pavpanchekha.com>
+;;           (C) 2013 Drew Haven      <ahaven@alum.mit.edu>
 
-; Suggestion to developers: M-x occur ";;"
+;; Author: Pavel Panchekha <me@pavpanchekha.com>
+;; Author: Drew Haven      <ahaven@alum.mit.edu>
+;; Version: 0.9
+;; Package-Requires: ((json "1.2") (oauth "1.0.3"))
+;; Keywords: dropbox
 
-;; TODO
-; - Return permissions other than -rwx------ if folder has shares
-; - dropbox-handle-set-visited-file-modtime might need actual implementation
-; - Switching to deleted buffer on file open
-; - Implement `replace` on insert-file-contents
-; - Implement `lockname` and `mustbenew` on write-region
-; - Implement perma-trashing files
-; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
-; - Figure out why TRASH is not passed to DELETE-DIRECTORY
-; - "This file has auto-save data"
-; - Use locale on authenticating the app (oauth library has issues)
-; - Request confirmation properly for OK-IF-ALREADY-EXISTS in move and copy
-; - Moving files works, but Dired thinks it doesn't
-; - DIRED-COMPRESS-FILE is not atomic.  Use /sync/batch
+;;; Commentary:
+
+;; This package allows one to access files stored in Dropbox,
+;; effectively acting as an Emacs Dropbox client and SDK.
+
+;;; Suggestion to developers: M-x occur ";;;"
+
+;;; TODO
+;; - Return permissions other than -rwx------ if folder has shares
+;; - dropbox-handle-set-visited-file-modtime might need actual implementation
+;; - Switching to deleted buffer on file open
+;; - Implement `replace` on insert-file-contents
+;; - Implement `lockname` and `mustbenew` on write-region
+;; - Implement perma-trashing files
+;; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
+;; - Figure out why TRASH is not passed to DELETE-DIRECTORY
+;; - "This file has auto-save data"
+;; - Use locale on authenticating the app (oauth library has issues)
+;; - Request confirmation properly for OK-IF-ALREADY-EXISTS in move and copy
+;; - Moving files works, but Dired thinks it doesn't
+;; - DIRED-COMPRESS-FILE is not atomic.  Use /sync/batch
+;; - Pop open help page on first use of a /db: path
 
 (require 'oauth)
 (require 'json)
 
-;; Customization Options
+;;; Customization Options
 
 (defgroup dropbox nil
   "The Dropbox Emacs Client and SDK"
@@ -89,7 +100,7 @@ debugging but otherwise very intrusive."
 (defvar dropbox-cache '())
 (defvar dropbox-access-token nil)
 
-;; Utilities
+;;; Utilities
 
 (defun dropbox-message (fmt-string &rest args)
   (when dropbox-verbose (apply 'message fmt-string args)))
@@ -127,7 +138,7 @@ string: \"%\" followed by two lowercase hex digits."
   `(let ((default-directory ,dir))
        ,@body))
 
-;; Caching for the Dropbox API
+;;; Caching for the Dropbox API
 
 (defun dropbox-cached (name path &optional no-expire)
   (let ((cached (assoc (cons name (dropbox-strip-final-slash path))
@@ -166,7 +177,7 @@ string: \"%\" followed by two lowercase hex digits."
 
   (setf dropbox-cache '()))
 
-;; Requesting URLs
+;;; Requesting URLs
 
 (defun dropbox-url (name &optional path)
   (let ((ppath (concat "https://"
@@ -255,7 +266,7 @@ non-nil."
       (let ((json-false nil))
         (json-read)))))
 
-;; Authentication
+;;; Authentication
 
 (defun dropbox-authenticate ()
   "Get authentication token for dropbox"
@@ -291,7 +302,7 @@ non-nil."
       (kill-this-buffer)))
   dropbox-access-token)
 
-;; Hooking into Dropbox
+;;; Hooking into Dropbox
 
 (defun dropbox-connect ()
   "Connect to Dropbox, hacking the \"/db:\" syntax into `find-file`."
@@ -395,7 +406,7 @@ non-nil."
     (start-file-process . dropbox-handle-start-file-process)
     (shell-command . dropbox-handle-shell-command)))
 
-;; Path Parsing
+;;; Path Parsing
 
 (defun dropbox-handle-file-name-directory (filename)
   "Return the directory component in file name FILENAME"
@@ -453,7 +464,8 @@ non-nil."
 (defun dropbox-handle-unhandled-file-name-directory (filename)
   dropbox-prefix)
 
-;; Predicates
+;;; Predicates
+
 (defun dropbox-file-p (filename)
   "Return t if file FILENAME is a Dropbox file (i.e. starts with `dropbox-prefix')"
 
@@ -534,7 +546,7 @@ FILENAME names a directory"
 (defun dropbox-handle-vc-registered (file)
   nil)
 
-;; Attributes
+;;; Attributes
 
 (defun dropbox-handle-file-attributes (filename &optional id-format)
   (let ((resp
@@ -588,7 +600,7 @@ FILENAME names a directory"
     (or (dropbox-error-p newmetadata)
         (string= (cdr (assoc 'rev metadata)) (cdr (assoc 'rev newmetadata))))))
 
-;; Directory Contents
+;;; Directory Contents
 
 (defun string-strip-prefix (prefix str)
   (if (string-prefix-p prefix str)
@@ -807,7 +819,7 @@ are /db: files, but otherwise is not necessarily atomic."
   "Fail to find any commands"
   nil)
 
-;; File contents
+;;; File contents
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
   ; TODO: Fails on images with switch to deleted buffer
@@ -936,7 +948,7 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
         (when (or (eq t visit) (eq nil visit) (stringp visit))
           (message "Wrote %s" filename))))))
 
-;; Misc
+;;; Misc
 
 (defun dropbox-handle-process-file (program &optional infile buffer display &rest args)
   nil)
