@@ -697,6 +697,7 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
      "Inserting directory `ls %s %s', wildcard %s, fulldir %s"
      switches filename wildcard full-directory-p)
 
+    ; TODO: look into uids, gids, and reformatting the date
     ; -rw-r--r--   1 ahaven  staff   1476 Jan  7 12:48 tramp.py
     (if (not full-directory-p)
         (let ((attributes (file-attributes filename 'string)))
@@ -708,20 +709,17 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
                           (elt attributes 7)
                           (format-time-string "%X" (elt attributes 4))))
           (let ((fname (file-name-nondirectory (directory-file-name filename)))
-                (start (point)))
-            (insert fname)
-            (when (elt attributes 0)
-              (put-text-property start (point) 'dired-filename t))
-          (newline)))
-      (insert "  " filename) ; print directory
-      (newline)
+                (start (point))
+                (isdir (elt attributes 0)))
+            (insert fname "\n")
+            (put-text-property start (- (point) 1) 'dired-filename t)))
       (let ((acct-info (dropbox-get-json "account/info")))
         (unless (null acct-info)
           (let ((quota-info (cdr (assoc 'quota_info acct-info))))
             (let ((total (cdr (assoc 'quota quota-info)))
                   (normal (cdr (assoc 'normal quota-info)))
                   (shared (cdr (assoc 'shared quota-info))))
-            (insert (format "used %d available %d (%.0f%% total used)"
+            (insert (format "  used %d available %d (%.0f%% total used)"
                             (+ shared normal) (- total normal shared)
                             (/ (* (+ shared normal) 100.0) total))))
             (newline))))
@@ -739,6 +737,7 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
 
 (defun dropbox-handle-copy-file (file newname &optional ok-if-already-exists
                                       keep-time preserve-uid-gid preserve-selinux-context)
+  ; TODO: implement ok-if-already-exists parameter
   (cond
    ((and (dropbox-file-p file) (dropbox-file-p newname))
     (dropbox-cache "metadata" newname
