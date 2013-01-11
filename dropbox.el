@@ -13,6 +13,7 @@
 ; - Implement perma-trashing files
 ; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
 ; - Figure out why TRASH is not passed to DELETE-DIRECTORY
+; - Make verbosity and secrets defcustoms
 
 (require 'oauth)
 (require 'json)
@@ -273,6 +274,8 @@ string: \"%\" followed by two lowercase hex digits."
     (file-name-all-completions . dropbox-handle-file-name-all-completions)
     (file-name-completion . dropbox-handle-file-name-completion)
     (make-directory . dropbox-handle-make-directory)
+    (delete-file . dropbox-handle-delete-file)
+    (delete-directory . dropbox-handle-delete-directory)
 
     ; File Contents
     (insert-file-contents . dropbox-handle-insert-file-contents)
@@ -301,8 +304,6 @@ string: \"%\" followed by two lowercase hex digits."
     (copy-file . dropbox-handle-copy-file)
     (copy-directory . dropbox-handle-copy-directory)
     (rename-file . dropbox-handle-rename-file)
-    (delete-directory . dropbox-handle-delete-directory)
-    (delete-file . dropbox-handle-delete-file)
     (executable-find . dropbox-handle-executable-find)
 
     ; File Contents
