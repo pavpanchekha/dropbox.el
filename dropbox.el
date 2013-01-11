@@ -567,6 +567,8 @@ NOSORT is useful if you plan to sort the result yourself."
 
 ;; File contents
 
+(defun dropbox-get-contents (filename)
+
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
   ; TODO: Fails on images with switch to deleted buffer
   ; TODO: implement replace
@@ -615,6 +617,15 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (setf extra-curl-args nil)
 
+(defun dropbox-upload (local-path remote-path)
+  (save-excursion
+    (let* ((extra-curl-args `("--data-binary" ,(concat "@" local-path)))
+          (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
+          (resp (dropbox-post "files_put" remote-path '())))
+      (if (dropbox-error-p resp)
+          nil
+        (dropbox-cache "metadata" remote-path)))))
+
 (defun dropbox-handle-write-region (start end filename &optional
 					  append visit lockname mustbenew)
   "Write current region into specified file.
@@ -650,17 +661,15 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
 
   (let ((localfile (make-auto-save-file-name)))
     (write-region start end localfile nil 1)
-    (let ((resp
-           (save-excursion
-             (let ((extra-curl-args `("--data-binary" ,(concat "@" localfile)))
-                   (url-request-extra-headers '(("Content-Type" . "application/octet-stream"))))
-             (dropbox-post "files_put" filename '()))))))
-      (when (stringp visit)
-        (set-visited-file-name visit))
-      (when (or (eq t visit) (stringp visit))
-        (set-buffer-modified-p nil))
-      (when (or (eq t visit) (eq nil visit) (stringp visit))
-        (message "Wrote %s" filename))))
+    (let ((resp (dropbox-upload localfile filename)))
+      (if (dropbox-error-p resp)
+          nil
+        (when (stringp visit)
+          (set-visited-file-name visit))
+        (when (or (eq t visit) (stringp visit))
+          (set-buffer-modified-p nil))
+        (when (or (eq t visit) (eq nil visit) (stringp visit))
+          (message "Wrote %s" filename))))))
 
 (defun dropbox-handle-insert-directory
   (filename switches &optional wildcard full-directory-p)
@@ -679,7 +688,6 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
      switches filename wildcard full-directory-p)
 
     ; -rw-r--r--   1 ahaven  staff   1476 Jan  7 12:48 tramp.py
-    ; TODO: this shouldn't be using `print'
     (if (not full-directory-p)
         (let ((attributes (file-attributes filename 'string)))
           (insert (format "  %s %2d %8s %8s %8d %s "
@@ -728,6 +736,16 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
                       ("from_path" . ,(dropbox-strip-file-name-prefix file))
                       ("to_path" . ,(dropbox-strip-file-name-prefix newfile))))))
    ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
-    nil)
+    (save-excursion
+      (let* ((buf (current-buffer))
+             (respbuf (dropbox-get "files" file))
+             (http-code (dropbox-get-http-code respbuf)))
+        (if (not (file-exists-p filename))
+            (error "File to copy doesn't exist")
+          (switch-to-buffer respbuf)
+          (beginning-of-buffer)
+          (re-search-forward "\r\n\r\n")
+          (write-region (point) (point-max) newname)
+          (switch-to-buffer buf)))))
    ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
-    nil)))
+    (dropbox-upload file newname))))
