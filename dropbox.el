@@ -709,7 +709,8 @@ NOSORT is useful if you plan to sort the result yourself."
      "Inserting directory `ls %s %s', wildcard %s, fulldir %s"
      switches filename wildcard full-directory-p)
 
-    ; TODO: look into uids, gids, and reformatting the date
+    ; TODO: look into uids, gids, and reformatting the date    
+    ; example directory listing:
     ; -rw-r--r--   1 ahaven  staff   1476 Jan  7 12:48 tramp.py
     (if (not full-directory-p)
         (let ((attributes (file-attributes filename 'string)))
@@ -742,7 +743,10 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-dired-insert-directory (dir switches &optional file-list
                                                   wildcard hdr)
-  (dropbox-handle-insert-directory dir switches wildcard t))
+  (if file-list
+      (loop for file in file-list
+            do (dropbox-handle-insert-directory (concat dir file) switches))
+    (dropbox-handle-insert-directory dir switches wildcard t)))
 
 (defun dropbox-handle-copy-file (file newname &optional ok-if-already-exists
                                       keep-time preserve-uid-gid preserve-selinux-context)
