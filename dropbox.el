@@ -687,11 +687,11 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-upload (local-path remote-path)
   (save-excursion
     (let* ((extra-curl-args `("--data-binary" ,(concat "@" local-path)))
-          (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
-          (resp (dropbox-post "files_put" remote-path '())))
+           (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
+           (resp (dropbox-post "files_put" remote-path '())))
       (if (dropbox-error-p resp)
           nil
-        (dropbox-cache "metadata" remote-path)))))
+        (dropbox-cache "metadata" remote-path resp)))))
 
 (defun dropbox-handle-write-region (start end filename &optional
 					  append visit lockname mustbenew)
