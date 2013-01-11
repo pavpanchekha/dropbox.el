@@ -1,3 +1,4 @@
+;; -*- tab-width: 8 -*-
 ;; dropbox.el --- an emacs tramp backend for dropbox
 ;; Copyright 2011 Pavel Panchekha <pavpanchekha@gmail.com>
 ;;
@@ -16,6 +17,7 @@
 ; - "This file has auto-save data"
 ; - Actually use locale
 ; - Use locale on authenticating the app (oauth library has issues)
+; - Request confirmation properly for OK-IF-ALREADY-EXISTS in move and copy
 
 (require 'oauth)
 (require 'json)
@@ -146,7 +148,7 @@ string: \"%\" followed by two lowercase hex digits."
              (not (dropbox-error-p value))
              (assoc 'contents value))
         (loop for ent across (cdr (assoc 'contents value))
-              for path = (concat "/db:"
+              for path = (concat dropbox-prefix
                                  (string-strip-prefix "/" (cdr (assoc 'path ent))))
               do (dropbox-cache "metadata" path ent)))
 
@@ -233,7 +235,11 @@ non-nil."
   (let* ((oauth-nonce-function (function oauth-internal-make-nonce))
          (buf (with-default-directory "~/"
                (oauth-post-url dropbox-access-token
-                               (dropbox-url name path) args))))
+                               (concat (dropbox-url name path)
+                                       (if (not (member name dropbox-post-not-locale))
+                                           (concat "?locale=" dropbox-locale) ""))
+                               args))))
+
     (with-current-buffer buf
       (let ((code (dropbox-get-http-code buf)))
         (if (dropbox-http-down-p code)
@@ -399,7 +405,7 @@ non-nil."
 
   (if (string-match "^\\(/db:.*/\\).*$" filename)
       (match-string 1 filename)
-    "/db:"))
+    dropbox-prefix))
 
 (defun dropbox-strip-file-name-prefix (filename)
   (substring filename 4))
@@ -437,7 +443,7 @@ non-nil."
 
   (if (and
        (not (eq (aref directory (1- (length directory))) ?/))
-       (not (string= directory "/db:")))
+       (not (string= directory dropbox-prefix)))
       (concat directory "/")
     directory))
 
@@ -448,7 +454,7 @@ non-nil."
   (make-temp-file (file-name-nondirectory buffer-file-name)))
 
 (defun dropbox-handle-unhandled-file-name-directory (filename)
-  "/db:")
+  dropbox-prefix)
 
 ;; Predicates
 (defun dropbox-file-p (filename)
@@ -459,12 +465,13 @@ non-nil."
 (defun dropbox-handle-file-directory-p (filename)
   "Return t if file FILENAME is a directory, too"
 
-  (if (or (string= filename "/db:") (string= filename "/db:/"))
+  (if (or (string= filename dropbox-prefix)
+          (string= filename (concat dropbox-prefix "/")))
       t
     (let ((resp (dropbox-get-json "metadata" filename)))
       (if (dropbox-error-p resp)
           nil
-        (cdr (assoc 'is_dir resp))))))
+        (and (cdr (assoc 'is_dir resp)) (not (assoc 'is_deleted resp)))))))
 
 (defun dropbox-handle-file-executable-p (filename)
   (file-directory-p filename))
@@ -497,11 +504,11 @@ non-nil."
   (if (and connected (not dropbox-access-token))
       nil
     (case identification
-      ((method) "/db:")
+      ((method) dropbox-prefix)
       ((user) "")
       ((host) "")
       ((localname) (dropbox-strip-file-name-prefix file))
-      (t "/db:"))))
+      (t dropbox-prefix))))
 
 (defun dropbox-handle-file-symlink-p (filename)
   nil)
@@ -807,7 +814,7 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
                     "fileops/copy" nil
                     `(("root" . "dropbox")
                       ("from_path" . ,(dropbox-strip-file-name-prefix file))
-                      ("to_path" . ,(dropbox-strip-file-name-prefix newfile))))))
+                      ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
    ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
     (save-excursion
       (let* ((buf (current-buffer))
@@ -822,3 +829,25 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
           (switch-to-buffer buf)))))
    ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
     (dropbox-upload file newname))))
+
+(defun dropbox-handle-rename-file (file newname &optional ok-if-already-exists)
+  "Renames FILE to NEWNAME.  If OK-IF-ALREADY-EXISTS is nil, signal an error if
+NEWNAME already exists.  Note that the move is atomic if both FILE and NEWNAME
+are /db: files, but otherwise is not necessarily atomic."
+
+  (cond
+   ((and (dropbox-file-p file) (dropbox-file-p newname))
+    (dropbox-un-cache "metadata" file)
+    (dropbox-un-cache "metadata" (file-name-directory file))
+    (dropbox-cache "metadata" newname
+                   (dropbox-post
+                    "fileops/move" nil
+                    `(("root" . "dropbox")
+                      ("from_path" . ,(dropbox-strip-file-name-prefix file))
+                      ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
+   ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
+    (copy-file file newname ok-if-already-exists)
+    (delete-file file))
+   ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
+    (copy-file file newname ok-if-already-exists)
+    (delete-file file))))
