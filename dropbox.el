@@ -339,10 +339,9 @@ string: \"%\" followed by two lowercase hex digits."
   "Return the filename component in file name FILENAME"
 
   (cond
-   ((string= filename "/db:") "/")
    ((string-match "^/db:.*/\\(.*\\)$" filename)
     (match-string 1 filename))
-   (else (substring filename 4))))
+   (t (substring filename 4))))
 
 (defun dropbox-handle-expand-file-name (filename &optional default-directory)
   "Return the canonicalized, absolute version of FILENAME"
@@ -380,7 +379,7 @@ string: \"%\" followed by two lowercase hex digits."
   (make-temp-file (file-name-nondirectory buffer-file-name)))
 
 (defun dropbox-handle-unhandled-file-name-directory (filename)
-  (file-name-directory filename))
+  "/db:")
 
 ;; Predicates
 (defun dropbox-file-p (filename)
