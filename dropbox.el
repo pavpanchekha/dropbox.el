@@ -14,28 +14,73 @@
 ; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
 ; - Figure out why TRASH is not passed to DELETE-DIRECTORY
 ; - Make verbosity and secrets defcustoms
+; - "This file has auto-save data"
+; - Actually use locale
 
 (require 'oauth)
 (require 'json)
-(load-file "dropbox-secrets.el")
 
+(defgroup dropbox nil
+  "The Dropbox Emacs Client and SDK"
+  :prefix "dropbox-"
+  :group 'file)
+
+(defcustom dropbox-token-file "~/.emacs.d/dropbox-token"
+  "The file where dropbox.el will store your Dropbox credentials"
+  :group 'dropbox
+  :type 'string)
+
+(defcustom dropbox-locale "en_US"
+  "The locale in which to return file sizes and times"
+  :group 'dropbox
+  :type 'string)
+
+(defcustom dropbox-cache-timeout 60
+  "The duration of time, in seconds, for which dropbox.el will
+cache metadata for files.  Setting it longer makes dropbox.el
+faster, but means that you will have old data if multiple clients
+concurrently modify your dropbox."
+  :group 'dropbox
+  :type 'integer)
+
+(defcustom dropbox-consumer-key ""
+  "The dropbox.el consumer key.  Dropbox uses OAuth 1.0, which
+relies upon a secret known only to the app that accesses Dropbox.
+Run `dropbox-connect` to learn more about how to set up dropbox.el."
+  :group 'dropbox
+  :type 'string)
+
+(defcustom dropbox-consumer-secret ""
+  "The dropbox.el consumer secret.  Dropbox uses OAuth 1.0, which
+relies upon a secret known only to the app that accesses Dropbox.
+Run `dropbox-connect` to learn more about how to set up dropbox.el."
+  :group 'dropbox
+  :type 'string)
+
+(defcustom dropbox-verbose nil
+  "Whether dropbox.el should `message` debug messages.  Helpful for
+debugging but otherwise very intrusive."
+  :group 'dropbox
+  :type 'boolean)
+
+; OAuth URL Endpoints
 (defvar dropbox-request-url       "https://api.dropbox.com/1/oauth/request_token")
 (defvar dropbox-access-url        "https://api.dropbox.com/1/oauth/access_token")
 (defvar dropbox-authorization-url "https://api.dropbox.com/1/oauth/authorize")
-(defvar dropbox-access-token nil)
-(defvar dropbox-locale nil)
 
-(defvar dropbox-token-file "~/.dropbox-token")
+; Dropbox URL Endpoint hosts
 (defvar dropbox-api-host "api.dropbox.com")
 (defvar dropbox-api-content-host "api-content.dropbox.com")
-(setf oauth-nonce-function (function oauth-internal-make-nonce))
-(defvar dropbox-prefix "/db:")
+(defvar dropbox-content-apis '("files" "files_put" "thumbnails"
+                               "commit_chunked_upload"))
 
-(defvar dropbox-message-verbose nil)
+; Do not edit the prefix -- lots of hard-coded regexes everywhere
+(defvar dropbox-prefix "/db:")
+(defvar dropbox-cache '())
+(defvar dropbox-access-token nil)
 
 (defun dropbox-message (fmt-string &rest args)
-  (when dropbox-message-verbose
-    (apply 'message fmt-string args)))
+  (when dropbox-verbose (apply 'message fmt-string args)))
 
 (defconst url-non-sanitized-chars
   (delete ?~ (append url-unreserved-chars '(?/ ?:))))
@@ -55,8 +100,6 @@ string: \"%\" followed by two lowercase hex digits."
                string)
              ""))
 
-(defvar dropbox-content-apis '("files" "files_put" "thumbnails" "commit_chunked_upload"))
-
 (defun dropbox-url (name &optional path)
   (let ((ppath (concat "https://"
                        (if (member name dropbox-content-apis)
@@ -67,13 +110,15 @@ string: \"%\" followed by two lowercase hex digits."
         (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" (dropbox-strip-file-name-prefix path))))
       ppath)))
 
-(defvar dropbox-cache '())
-(defvar dropbox-cache-timeout 60)
-
 (defun dropbox-strip-final-slash (path)
-  (if (= (aref path (- (length path) 1)) 47)
-      (substring path 0 -1)
-    path))
+  (cond
+   ((null path)
+    path)
+   ((string= path "")
+    path)
+   ((= (aref path (- (length path) 1)) 47)
+    (substring path 0 -1))
+   (t path)))
 
 (defun dropbox-cached (name path)
   (let ((cached (assoc (cons name (dropbox-strip-final-slash path))
@@ -102,11 +147,11 @@ string: \"%\" followed by two lowercase hex digits."
 
     value))
 
-(defun dropbox-uncache (name path)
+(defun dropbox-un-cache (name path)
   (setf dropbox-cache (remove-if '(lambda (x) (equal (car x) (cons name path)))
                                  dropbox-cache)))
 
-(defun dropbox-clear-cache ()
+(defun dropbox-uncache ()
   (interactive)
 
   (setf dropbox-cache '()))
@@ -128,7 +173,9 @@ string: \"%\" followed by two lowercase hex digits."
     (let ((extra-curl-args (if (and curl-tracefile
                                     (not extra-curl-args))
                                `("--trace" ,curl-tracefile)
-                               extra-curl-args)))
+                               extra-curl-args))
+          (oauth-nonce-function (function oauth-internal-make-nonce)))
+
       (oauth-fetch-url dropbox-access-token (dropbox-url name path)))))
 
 (defun dropbox-get-http-code (buf)
@@ -169,10 +216,12 @@ non-nil."
             (dropbox-cache name path (json-read)))))))
 
 (defun dropbox-post (name &optional path args)
-  (dropbox-uncache name path)
+  (dropbox-un-cache name path)
   (dropbox-message "Requesting %s for %s" name path)
-  (let ((buf (with-default-directory "~/"
-               (oauth-post-url dropbox-access-token (dropbox-url name path) args))))
+  (let* ((oauth-nonce-function (function oauth-internal-make-nonce))
+         (buf (with-default-directory "~/"
+               (oauth-post-url dropbox-access-token
+                               (dropbox-url name path) args))))
     (with-current-buffer buf
       (let ((code (dropbox-get-http-code buf)))
         (if (dropbox-http-down-p code)
@@ -222,11 +271,7 @@ non-nil."
   "Connect to Dropbox, hacking in the Dropbox syntax into find-file"
   (interactive)
 
-  (let* ((token (dropbox-authenticate))
-         (part (oauth-access-token-auth-t token)))
-    (setq dropbox-token (oauth-t-token part))
-    (setq dropbox-token-2 (oauth-t-token-secret part)))
-
+  (dropbox-authenticate)
   (setf file-name-handler-alist
         (cons '("\\`/db:" . dropbox-handler) file-name-handler-alist)))
 
