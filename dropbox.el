@@ -70,8 +70,14 @@ string: \"%\" followed by two lowercase hex digits."
 (defvar dropbox-cache '())
 (defvar dropbox-cache-timeout 60)
 
+(defun dropbox-strip-final-slash (path)
+  (if (= (aref path (- (length path) 1)) 47)
+      (substring path 0 -1)
+    path))
+
 (defun dropbox-cached (name path)
-  (let ((cached (assoc (cons name path) dropbox-cache)))
+  (let ((cached (assoc (cons name (dropbox-strip-final-slash path))
+                       dropbox-cache)))
     (if (and cached
              (time-less-p (time-subtract (current-time) (cadr cached))
                           `(0 ,dropbox-cache-timeout 0)))
@@ -79,6 +85,7 @@ string: \"%\" followed by two lowercase hex digits."
       nil)))
 
 (defun dropbox-cache (name path value)
+  (setf path (dropbox-strip-final-slash path))
   (let ((cached (assoc (cons name path) dropbox-cache)))
     (if cached
         (setf (cdr cached) (cons (current-time) value)))
@@ -91,8 +98,6 @@ string: \"%\" followed by two lowercase hex digits."
         (loop for ent across (cdr (assoc 'contents value))
               for path = (concat "/db:"
                                  (string-strip-prefix "/" (cdr (assoc 'path ent))))
-              for is-dir = (cdr (assoc 'is_dir ent))
-              if (not is-dir)
               do (dropbox-cache "metadata" path ent)))
 
     value))
@@ -145,16 +150,23 @@ string: \"%\" followed by two lowercase hex digits."
 (defun dropbox-http-down-p (code)
   (and (>= (cadr code) 500) (< (cadr code) 600)))
 
-(defun dropbox-get-json (name &optional path)
-  (or (dropbox-cached name path)
-      (with-current-buffer (dropbox-get name path)
-        (let ((code (dropbox-get-http-code (current-buffer))))
-          (if (dropbox-http-down-p code)
-              (error "Dropbox seems to be having problems: %d %s"
-                     (cadr code) (caddr code))))
-        (beginning-of-line)
-        (let ((json-false nil))
-          (dropbox-cache name path (json-read))))))
+(defun dropbox-get-json (name &optional path want-contents)
+  "Get JSON for the NAME endpoint for path PATH.  The 'contents
+field is not guaranteed to be present unless WANT-CONTENTS is
+non-nil."
+
+  (let ((cached (dropbox-cached name path)))
+    (when (and want-contents (not (assoc 'contents cached)))
+      (setf cached nil))
+    (or cached
+        (with-current-buffer (dropbox-get name path)
+          (let ((code (dropbox-get-http-code (current-buffer))))
+            (if (dropbox-http-down-p code)
+                (error "Dropbox seems to be having problems: %d %s"
+                       (cadr code) (caddr code))))
+          (beginning-of-line)
+          (let ((json-false nil))
+            (dropbox-cache name path (json-read)))))))
 
 (defun dropbox-post (name &optional path args)
   (dropbox-uncache name path)
@@ -499,7 +511,7 @@ Otherwise, the list returned is sorted with `string-lessp'.
 NOSORT is useful if you plan to sort the result yourself."
 
   (let* ((path (dropbox-strip-file-name-prefix directory))
-	 (metadata (dropbox-get-json "metadata" directory))
+	 (metadata (dropbox-get-json "metadata" directory t)) ; want-contents: t
 	 (unsorted
 	  (if (cdr (assoc 'is_dir metadata))
 	      (loop for file across (cdr (assoc 'contents metadata))
