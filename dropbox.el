@@ -19,6 +19,7 @@
 ; - "This file has auto-save data"
 ; - Use locale on authenticating the app (oauth library has issues)
 ; - Request confirmation properly for OK-IF-ALREADY-EXISTS in move and copy
+; - Moving files works, but Dired thinks it doesn't
 
 (require 'oauth)
 (require 'json)
