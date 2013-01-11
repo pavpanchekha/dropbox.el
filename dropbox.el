@@ -567,8 +567,6 @@ NOSORT is useful if you plan to sort the result yourself."
 
 ;; File contents
 
-(defun dropbox-get-contents (filename)
-
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
   ; TODO: Fails on images with switch to deleted buffer
   ; TODO: implement replace
@@ -615,7 +613,7 @@ NOSORT is useful if you plan to sort the result yourself."
   (url-mark-buffer-as-dead (current-buffer))
   (current-buffer))
 
-(setf extra-curl-args nil)
+(defvar extra-curl-args nil)
 
 (defun dropbox-upload (local-path remote-path)
   (save-excursion
