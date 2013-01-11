@@ -1,4 +1,4 @@
-;;; dropbox.el --- an emacs tramp backend for dropbox
+;;; dropbox.el --- Emacs backend for dropbox
 
 ;; Copyright (C) 2011 Pavel Panchekha <me@pavpanchekha.com>
 ;;           (C) 2013 Drew Haven      <ahaven@alum.mit.edu>
