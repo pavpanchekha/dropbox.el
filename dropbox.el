@@ -333,11 +333,12 @@ non-nil."
     (expand-file-name . dropbox-handle-expand-file-name)
     (file-truename . dropbox-handle-file-truename)
     (substitute-in-file-name . dropbox-handle-substitute-in-file-name)
+
     (directory-file-name . dropbox-handle-directory-file-name)
     (file-name-as-directory . dropbox-handle-file-name-as-directory)
+    (unhandled-file-name-directory . dropbox-handle-unhandled-file-name-directory)
     (find-backup-file-name . dropbox-handle-find-backup-file-name)
     (make-auto-save-file-name . dropbox-handle-make-auto-save-file-name)
-    (unhandled-file-name-directory . dropbox-handle-unhandled-file-name-directory)
 
     ; Predicates
     (file-directory-p . dropbox-handle-file-directory-p)
@@ -356,52 +357,49 @@ non-nil."
     (file-attributes . dropbox-handle-file-attributes)
     (file-modes . dropbox-handle-file-modes)
     (set-file-modes . dropbox-handle-set-file-modes)
+    (file-selinux-context . dropbox-handle-file-selinux-context)
+    (set-file-selinux-context . dropbox-handle-set-file-selinux-context)
+
     (set-visited-file-modtime . dropbox-handle-set-visited-file-modtime)
     (verify-visited-file-modtime . dropbox-handle-verify-visited-file-modtime)
     (set-file-times . dropbox-handle-set-file-times)
-    (file-selinux-context . dropbox-handle-file-selinux-context)
-    (set-file-selinux-context . dropbox-handle-set-file-selinux-context)
 
     ; Directory Contents
     (directory-files . dropbox-handle-directory-files)
     (file-name-all-completions . dropbox-handle-file-name-all-completions)
     (file-name-completion . dropbox-handle-file-name-completion)
+
     (make-directory . dropbox-handle-make-directory)
     (delete-file . dropbox-handle-delete-file)
     (delete-directory . dropbox-handle-delete-directory)
     (copy-file . dropbox-handle-copy-file)
     (rename-file . dropbox-handle-rename-file)
-    (dired-uncache . dropbox-handle-dired-uncache)
+    (make-symbolic-link . dropbox-handle-make-symbolic-link)
+    (executable-find . dropbox-handle-executable-find)
+
+    (insert-directory . dropbox-handle-insert-directory)
     (dired-insert-directory . dropbox-handle-dired-insert-directory)
+    (dired-uncache . dropbox-handle-dired-uncache)
 
     ; File Contents
     (insert-file-contents . dropbox-handle-insert-file-contents)
     (write-region . dropbox-handle-write-region)
+    (file-local-copy . dropbox-handle-file-local-copy)
 
     ; Misc
     (process-file . dropbox-handle-process-file)
+    (start-file-process . dropbox-handle-start-file-process)
+    (shell-command . dropbox-handle-shell-command)
 
     ;; Unhandled
-    ; Attributes
-
     ; Directory Contents
     (directory-files-and-attributes
      . dropbox-handle-directory-files-and-attributes)
-    (make-symbolic-link . dropbox-handle-make-symbolic-link)
     (copy-directory . dropbox-handle-copy-directory)
-    (executable-find . dropbox-handle-executable-find)
-
-    ; File Contents
-    (file-local-copy . dropbox-handle-file-local-copy)
-    (insert-file-contents-literally
-     . dropbox-handle-insert-file-contents-literally)
 
     ; Misc
     (load . dropbox-handle-load)
     (add-name-to-file . dropbox-handle-add-name-to-file)
-    (start-file-process . dropbox-handle-start-file-process)
-    (shell-command . dropbox-handle-shell-command)
-    (insert-directory . dropbox-handle-insert-directory)
     (dired-compress-file . dropbox-handle-dired-compress-file)
     (dired-recursive-delete-directory
      . dropbox-handle-dired-recursive-delete-directory)))
@@ -751,17 +749,7 @@ NOSORT is useful if you plan to sort the result yourself."
                       ("from_path" . ,(dropbox-strip-file-name-prefix file))
                       ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
    ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
-    (save-excursion
-      (let* ((buf (current-buffer))
-             (respbuf (dropbox-get "files" file))
-             (http-code (dropbox-get-http-code respbuf)))
-        (if (not (file-exists-p filename))
-            (error "File to copy doesn't exist")
-          (switch-to-buffer respbuf)
-          (beginning-of-buffer)
-          (re-search-forward "\r\n\r\n")
-          (write-region (point) (point-max) newname)
-          (switch-to-buffer buf)))))
+    (move-file (file-local-copy file) newname))
    ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
     (dropbox-upload file newname))))
 
@@ -786,6 +774,14 @@ are /db: files, but otherwise is not necessarily atomic."
    ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
     (copy-file file newname ok-if-already-exists)
     (delete-file file))))
+
+(defun dropbox-handle-make-symbolic-link (filename linkname
+                                                   &optional ok-if-already-exists)
+  (error "Dropbox cannot hold symbolic links"))
+
+(defun dropbox-handle-executable-find (command)
+  "Fail to find any commands"
+  nil)
 
 ;; File contents
 
@@ -846,6 +842,20 @@ are /db: files, but otherwise is not necessarily atomic."
           nil
         (dropbox-cache "metadata" remote-path resp)))))
 
+(defun dropbox-handle-file-local-copy (filename)
+  "Downloads a copy of a Dropbox file to a temporary file."
+  (save-excursion
+    (let* ((newname (make-temp-file (file-name-nondirectory filename)))
+           (respbuf (dropbox-get "files" file))
+           (http-code (dropbox-get-http-code respbuf)))
+      (if (not (file-exists-p filename))
+          (error "File to copy doesn't exist")
+        (with-current-buffer respbuf
+          (beginning-of-buffer)
+          (re-search-forward "\r\n\r\n")
+          (write-region (point) (point-max) newname)))
+      newname)))
+
 (defun dropbox-handle-write-region (start end filename &optional
 					  append visit lockname mustbenew)
   "Write current region into specified file.
@@ -896,3 +906,8 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
 (defun dropbox-handle-process-file (program &optional infile buffer display &rest args)
   nil)
 
+(defun dropbox-handle-start-file-process (name buffer program &rest program-args)
+  nil)
+
+(defun dropbox-handle-shell-command (command &optional output-buffer error-buffer)
+  nil)
