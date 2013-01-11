@@ -374,6 +374,8 @@ non-nil."
     (copy-directory . dropbox-handle-copy-directory)
     (rename-file . dropbox-handle-rename-file)
     (executable-find . dropbox-handle-executable-find)
+    (dired-insert-directory . dropbox-handle-dired-insert-directory)
+    (dired-uncache . dropbox-handle-dired-uncache)
 
     ; File Contents
     (file-local-copy . dropbox-handle-file-local-copy)
@@ -386,11 +388,9 @@ non-nil."
     (start-file-process . dropbox-handle-start-file-process)
     (shell-command . dropbox-handle-shell-command)
     (insert-directory . dropbox-handle-insert-directory)
-    (dired-insert-directory . dropbox-handle-dired-insert-directory)
     (dired-compress-file . dropbox-handle-dired-compress-file)
     (dired-recursive-delete-directory
-     . dropbox-handle-dired-recursive-delete-directory)
-    (dired-uncache . dropbox-handle-dired-uncache)))
+     . dropbox-handle-dired-recursive-delete-directory)))
 
 ;; Path Parsing
 
@@ -633,6 +633,11 @@ NOSORT is useful if you plan to sort the result yourself."
                                    `(("root" . "dropbox")
                                      ("path" . ,(dropbox-strip-file-name-prefix
                                                  directory))))))))
+
+(defun dropbox-handle-dired-uncache (dir)
+  "Remove DIR from the dropbox.el metadata cache"
+
+  (dropbox-un-cache "metadata" dir))
 
 ;; File contents
 
