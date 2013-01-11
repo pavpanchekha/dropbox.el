@@ -13,9 +13,9 @@
 ; - Implement perma-trashing files
 ; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
 ; - Figure out why TRASH is not passed to DELETE-DIRECTORY
-; - Make verbosity and secrets defcustoms
 ; - "This file has auto-save data"
 ; - Actually use locale
+; - Use locale on authenticating the app (oauth library has issues)
 
 (require 'oauth)
 (require 'json)
@@ -73,11 +73,16 @@ debugging but otherwise very intrusive."
 (defvar dropbox-api-content-host "api-content.dropbox.com")
 (defvar dropbox-content-apis '("files" "files_put" "thumbnails"
                                "commit_chunked_upload"))
+; Locale information
+(defvar dropbox-get-not-locale '("files" "copy_ref" "thumbnails"))
+(defvar dropbox-post-not-locale '("chunked_upload"))
+
 
 ; Do not edit the prefix -- lots of hard-coded regexes everywhere
 (defvar dropbox-prefix "/db:")
 (defvar dropbox-cache '())
 (defvar dropbox-access-token nil)
+
 
 (defun dropbox-message (fmt-string &rest args)
   (when dropbox-verbose (apply 'message fmt-string args)))
@@ -176,7 +181,10 @@ string: \"%\" followed by two lowercase hex digits."
                                extra-curl-args))
           (oauth-nonce-function (function oauth-internal-make-nonce)))
 
-      (oauth-fetch-url dropbox-access-token (dropbox-url name path)))))
+      (oauth-fetch-url dropbox-access-token
+                       (concat (dropbox-url name path)
+                               (if (not (member name dropbox-get-not-locale))
+                                   (concat "?locale=" dropbox-locale) ""))))))
 
 (defun dropbox-get-http-code (buf)
   (save-excursion
@@ -218,6 +226,10 @@ non-nil."
 (defun dropbox-post (name &optional path args)
   (dropbox-un-cache name path)
   (dropbox-message "Requesting %s for %s" name path)
+
+  (if (not (member name dropbox-post-not-locale))
+      (push (cons "locale" dropbox-locale) args))
+
   (let* ((oauth-nonce-function (function oauth-internal-make-nonce))
          (buf (with-default-directory "~/"
                (oauth-post-url dropbox-access-token
@@ -665,7 +677,7 @@ NOSORT is useful if you plan to sort the result yourself."
                            oauth-post-vars-alist)))
                      ,@(oauth-headers-to-curl url-request-extra-headers)
                      ,@extra-curl-args)))
-    (message "curl-args: %s" curl-args)
+    (dropbox-message "curl-args: %s" curl-args)
     (apply 'call-process "curl" nil t nil curl-args))
   (url-mark-buffer-as-dead (current-buffer))
   (current-buffer))
