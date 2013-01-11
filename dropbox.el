@@ -383,6 +383,10 @@ string: \"%\" followed by two lowercase hex digits."
   (file-name-directory filename))
 
 ;; Predicates
+(defun dropbox-file-p (filename)
+  "Return t if file FILENAME is a Dropbox file (i.e. starts with `dropbox-prefix')"
+
+  (string-prefix-p dropbox-prefix filename))
 
 (defun dropbox-handle-file-directory-p (filename)
   "Return t if file FILENAME is a directory, too"
@@ -713,3 +717,18 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
 
 (defun dropbox-handle-process-file (program &optional infile buffer display &rest args)
   nil)
+
+(defun dropbox-handle-copy-file (file newname &optional ok-if-already-exists
+                                      keep-time preserve-uid-gid preserve-selinux-context)
+  (cond
+   ((and (dropbox-file-p file) (dropbox-file-p newname))
+    (dropbox-cache "metadata" newname
+                   (dropbox-post
+                    "fileops/copy" nil
+                    `(("root" . "dropbox")
+                      ("from_path" . ,(dropbox-strip-file-name-prefix file))
+                      ("to_path" . ,(dropbox-strip-file-name-prefix newfile))))))
+   ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
+    nil)
+   ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
+    nil)))
