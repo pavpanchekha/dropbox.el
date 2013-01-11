@@ -132,12 +132,13 @@ string: \"%\" followed by two lowercase hex digits."
 
 ;; Caching for the Dropbox API
 
-(defun dropbox-cached (name path)
+(defun dropbox-cached (name path &optional no-expire)
   (let ((cached (assoc (cons name (dropbox-strip-final-slash path))
                        dropbox-cache)))
     (if (and cached
-             (time-less-p (time-subtract (current-time) (cadr cached))
-                          `(0 ,dropbox-cache-timeout 0)))
+             (or no-expire
+                 (time-less-p (time-subtract (current-time) (cadr cached))
+                              `(0 ,dropbox-cache-timeout 0))))
         (cddr cached)
       nil)))
 
@@ -357,7 +358,12 @@ non-nil."
     ; Attributes
     (file-attributes . dropbox-handle-file-attributes)
     (file-modes . dropbox-handle-file-modes)
+    (set-file-modes . dropbox-handle-set-file-modes)
     (set-visited-file-modtime . dropbox-handle-set-visited-file-modtime)
+    (verify-visited-file-modtime . dropbox-handle-verify-visited-file-modtime)
+    (set-file-times . dropbox-handle-set-file-times)
+    (file-selinux-context . dropbox-handle-file-selinux-context)
+    (set-file-selinux-context . dropbox-handle-set-file-selinux-context)
 
     ; Directory Contents
     (directory-files . dropbox-handle-directory-files)
@@ -380,11 +386,6 @@ non-nil."
 
     ;; Unhandled
     ; Attributes
-    (set-file-modes . dropbox-handle-set-file-modes)
-    (set-file-times . dropbox-handle-set-file-times)
-    (verify-visited-file-modtime . dropbox-handle-verify-visited-file-modtime)
-    (file-selinux-context . dropbox-handle-file-selinux-context)
-    (set-file-selinux-context . dropbox-handle-set-file-selinux-context)
 
     ; Directory Contents
     (directory-files-and-attributes
@@ -566,9 +567,34 @@ non-nil."
 (defun dropbox-handle-file-modes (filename)
   448) ; 448 = 0b111000000 is rwx------
 
+(defun dropbox-handle-set-file-modes (filename mode)
+  nil)
+
+(defun dropbox-handle-set-file-times (filename &optional timestamp)
+  nil)
+
 (defun dropbox-handle-set-visited-file-modtime (&optional time-list)
   ; TODO: this might need to be implemented
   nil)
+
+(defun dropbox-handle-file-selinux-context (filename)
+  "Report that files in Dropbox have no SELinux context"
+  '(nil nil nil nil))
+
+(defun dropbox-handle-file-selinux-context (filename)
+  "Fail to set FILENAME's SELinux context"
+  nil)
+
+(defun dropbox-handle-verify-visited-file-modtile (&optional buf)
+  "Check that the file BUF is visiting hasn't changed since BUF was opened."
+
+  (let* (metadata new-metadata)
+    (setf metadata (dropbox-cached "metadata" (buffer-file-name buf)))
+    (dropbox-un-cache "metadata" (buffer-file-name buf))
+    (setf newmetadata (dropbox-get-json "metadata" (buffer-file-name buf)))
+
+    (or (dropbox-error-p newmetadata)
+        (string= (cdr (assoc 'rev metadata)) (cdr (assoc 'rev newmetadata))))))
 
 ;; Directory Contents
 
