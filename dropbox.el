@@ -281,9 +281,10 @@ non-nil."
         (kill-this-buffer)))
   (unless dropbox-access-token ; Oh, we need to get a token
     (setq dropbox-access-token
-          (oauth-authorize-app dropbox-consumer-key dropbox-consumer-secret
-                               dropbox-request-url dropbox-access-url
-                               dropbox-authorization-url))
+          (let ((oauth-nonce-function (function oauth-internal-make-nonce)))
+            (oauth-authorize-app dropbox-consumer-key dropbox-consumer-secret
+                                 dropbox-request-url dropbox-access-url
+                                 dropbox-authorization-url)))
     (save-excursion
       (find-file dropbox-token-file)
       (end-of-buffer)
