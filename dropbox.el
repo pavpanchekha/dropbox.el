@@ -14,8 +14,6 @@
 ;; This package allows one to access files stored in Dropbox,
 ;; effectively acting as an Emacs Dropbox client and SDK.
 
-;;; Suggestion to developers: M-x occur ";;;"
-
 ;;; TODO
 ;; - Return permissions other than -rwx------ if folder has shares
 ;; - dropbox-handle-set-visited-file-modtime might need actual implementation
@@ -28,9 +26,10 @@
 ;; - "This file has auto-save data"
 ;; - Use locale on authenticating the app (oauth library has issues)
 ;; - Request confirmation properly for OK-IF-ALREADY-EXISTS in move and copy
-;; - Moving files works, but Dired thinks it doesn't
 ;; - DIRED-COMPRESS-FILE is not atomic.  Use /sync/batch
 ;; - Pop open help page on first use of a /db: path
+
+;; Suggestion to developers: M-x occur ";;;"
 
 (require 'oauth)
 (require 'json)
@@ -186,7 +185,7 @@ string: \"%\" followed by two lowercase hex digits."
                          dropbox-api-host)
                        "/1/" name)))
     (if path
-        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" (dropbox-strip-file-name-prefix path))))
+        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" (dropbox-strip-prefix path))))
       ppath)))
 
 (defvar curl-tracefile nil)
@@ -415,7 +414,7 @@ non-nil."
       (match-string 1 filename)
     dropbox-prefix))
 
-(defun dropbox-strip-file-name-prefix (filename)
+(defun dropbox-strip-prefix (filename)
   (substring filename 4))
 
 (defun dropbox-handle-file-name-nondirectory (filename)
@@ -429,7 +428,15 @@ non-nil."
 (defun dropbox-handle-expand-file-name (filename &optional default-directory)
   "Return the canonicalized, absolute version of FILENAME"
 
-  filename)
+  (if (or (file-name-absolute-p filename)
+          (not (dropbox-file-p default-directory)))
+      filename
+    (concat
+     dropbox-prefix
+     (substring
+      (expand-file-name filename
+                        (concat "/" (dropbox-strip-prefix default-directory)))
+      1))))
 
 (defun dropbox-handle-file-truename (filename)
   filename)
@@ -534,7 +541,7 @@ FILENAME names a directory"
       ((method) dropbox-prefix)
       ((user) "")
       ((host) "")
-      ((localname) (dropbox-strip-file-name-prefix file))
+      ((localname) (dropbox-strip-prefix file))
       (t dropbox-prefix))))
 
 (defun dropbox-handle-file-symlink-p (filename)
@@ -623,7 +630,7 @@ If NOSORT is non-nil, the list is not sorted--its order is unpredictable.
 Otherwise, the list returned is sorted with `string-lessp'.
 NOSORT is useful if you plan to sort the result yourself."
 
-  (let* ((path (dropbox-strip-file-name-prefix directory))
+  (let* ((path (dropbox-strip-prefix directory))
 	 (metadata (dropbox-get-json "metadata" directory t)) ; want-contents: t
 	 (unsorted
 	  (if (cdr (assoc 'is_dir metadata))
@@ -673,7 +680,7 @@ NOSORT is useful if you plan to sort the result yourself."
                      (dropbox-post
                       "fileops/create_folder" nil
                       `(("root" . "dropbox")
-                        ("path" . ,(dropbox-strip-file-name-prefix dir)))))))
+                        ("path" . ,(dropbox-strip-prefix dir)))))))
 
 (defun dropbox-handle-delete-file (filename &optional trash)
   "Delete file name FILENAME.  If TRASH is nil, permanently delete it."
@@ -682,7 +689,7 @@ NOSORT is useful if you plan to sort the result yourself."
       (dropbox-cache "metadata" filename
                      (dropbox-post "fileops/delete" nil
                                    `(("root" . "dropbox")
-                                     ("path" . ,(dropbox-strip-file-name-prefix
+                                     ("path" . ,(dropbox-strip-prefix
                                                  filename)))))
     (error "Perma-trashing files not yet implemented")))
 
@@ -697,7 +704,7 @@ NOSORT is useful if you plan to sort the result yourself."
       (dropbox-cache "metadata" directory
                      (dropbox-post "fileops/delete" nil
                                    `(("root" . "dropbox")
-                                     ("path" . ,(dropbox-strip-file-name-prefix
+                                     ("path" . ,(dropbox-strip-prefix
                                                  directory))))))))
 
 (defun dropbox-handle-dired-uncache (dir)
@@ -711,7 +718,7 @@ NOSORT is useful if you plan to sort the result yourself."
 `tramp-sh-handle-insert-directory'."
 
   (setq filename (expand-file-name filename))
-  (let ((localname (dropbox-strip-file-name-prefix filename)))
+  (let ((localname (dropbox-strip-prefix filename)))
     (when (stringp switches)
       (setq switches (split-string switches)))
     (unless full-directory-p
@@ -769,8 +776,8 @@ NOSORT is useful if you plan to sort the result yourself."
                    (dropbox-post
                     "fileops/copy" nil
                     `(("root" . "dropbox")
-                      ("from_path" . ,(dropbox-strip-file-name-prefix file))
-                      ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
+                      ("from_path" . ,(dropbox-strip-prefix file))
+                      ("to_path" . ,(dropbox-strip-prefix newname))))))
    ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
     (move-file (file-local-copy file) newname))
    ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
@@ -798,8 +805,8 @@ are /db: files, but otherwise is not necessarily atomic."
                    (dropbox-post
                     "fileops/move" nil
                     `(("root" . "dropbox")
-                      ("from_path" . ,(dropbox-strip-file-name-prefix file))
-                      ("to_path" . ,(dropbox-strip-file-name-prefix newname))))))
+                      ("from_path" . ,(dropbox-strip-prefix file))
+                      ("to_path" . ,(dropbox-strip-prefix newname))))))
    ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
     (copy-file file newname ok-if-already-exists)
     (delete-file file))
