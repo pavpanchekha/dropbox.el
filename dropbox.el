@@ -4,7 +4,7 @@
 ;;           (C) 2013 Drew Haven      <ahaven@alum.mit.edu>
 
 ;; Author: Pavel Panchekha <me@pavpanchekha.com>
-;; Version: 0.9
+;; Version: 0.9.1
 ;; Package-Requires: ((json "1.2") (oauth "1.0.3"))
 ;; Keywords: dropbox
 ;; Contributors:
