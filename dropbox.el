@@ -49,6 +49,7 @@
 
 (require 'oauth)
 (require 'json)
+(require 'cl-lib)
 
 ;;; Customization Options
 
