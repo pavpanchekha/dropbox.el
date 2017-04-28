@@ -180,7 +180,7 @@ string: \"%\" followed by two lowercase hex digits."
         (cl-loop for ent across (cdr (assoc 'contents value))
               for path = (concat dropbox-prefix
                                  (string-strip-prefix "/" (cdr (assoc 'path ent))))
-              cl-do (dropbox-cache "metadata" path ent)))
+              do (dropbox-cache "metadata" path ent)))
 
     value))
 
@@ -775,13 +775,13 @@ NOSORT is useful if you plan to sort the result yourself."
       (cl-loop for file in (if wildcard
                             (directory-files (file-name-directory filename) t filename)
                           (directory-files filename t))
-            cl-do (insert-directory file switches)))))
+            do (insert-directory file switches)))))
 
 (defun dropbox-handle-dired-insert-directory (dir switches &optional file-list
                                                   wildcard hdr)
   (if file-list
       (cl-loop for file in file-list
-            cl-do (dropbox-handle-insert-directory (concat dir file) switches))
+            do (dropbox-handle-insert-directory (concat dir file) switches))
     (dropbox-handle-insert-directory dir switches wildcard t)))
 
 (defun dropbox-handle-copy-file (file newname &optional ok-if-already-exists
