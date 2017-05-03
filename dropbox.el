@@ -49,6 +49,7 @@
 
 (require 'oauth)
 (require 'json)
+(require 'cl-lib)
 
 ;;; Customization Options
 
@@ -176,7 +177,7 @@ string: \"%\" followed by two lowercase hex digits."
     (if (and (string= name "metadata")
              (not (dropbox-error-p value))
              (assoc 'contents value))
-        (loop for ent across (cdr (assoc 'contents value))
+        (cl-loop for ent across (cdr (assoc 'contents value))
               for path = (concat dropbox-prefix
                                  (string-strip-prefix "/" (cdr (assoc 'path ent))))
               do (dropbox-cache "metadata" path ent)))
@@ -184,7 +185,7 @@ string: \"%\" followed by two lowercase hex digits."
     value))
 
 (defun dropbox-un-cache (name path)
-  (setf dropbox-cache (remove-if '(lambda (x) (equal (car x) (cons name path)))
+  (setf dropbox-cache (cl-remove-if '(lambda (x) (equal (car x) (cons name path)))
                                  dropbox-cache)))
 
 (defun dropbox-uncache ()
@@ -276,7 +277,7 @@ non-nil."
       (let ((code (dropbox-get-http-code buf)))
         (if (dropbox-http-down-p code)
             (error "Dropbox seems to be having problems: %d %s"
-                   (cadr code) (caddr code))))
+                   (cadr code) (cl-caddr code))))
       (beginning-of-line)
       (let ((json-false nil))
         (json-read)))))
@@ -553,7 +554,7 @@ FILENAME names a directory"
 
   (if (and connected (not dropbox-access-token))
       nil
-    (case identification
+    (cl-case identification
       ((method) dropbox-prefix)
       ((user) "")
       ((host) "")
@@ -650,7 +651,7 @@ NOSORT is useful if you plan to sort the result yourself."
 	 (metadata (dropbox-get-json "metadata" directory t)) ; want-contents: t
 	 (unsorted
 	  (if (cdr (assoc 'is_dir metadata))
-	      (loop for file across (cdr (assoc 'contents metadata))
+	      (cl-loop for file across (cdr (assoc 'contents metadata))
 		    for fname = (dropbox-extract-fname file path full)
 		    if (or (null match) (string-match match fname))
 		    collect fname)
@@ -662,7 +663,7 @@ NOSORT is useful if you plan to sort the result yourself."
     (list*
      (cons "." (file-attributes directory))
      (cons ".." (file-attributes (dropbox-parent directory)))
-     (loop for file in files
+     (cl-loop for file in files
            for attrs = (file-attributes (concat (file-name-as-directory directory)
                                                 file) id-format)
            collect (cons file attrs)))))
@@ -771,7 +772,7 @@ NOSORT is useful if you plan to sort the result yourself."
                             (+ shared normal) (- total normal shared)
                             (/ (* (+ shared normal) 100.0) total))))
             (newline))))
-      (loop for file in (if wildcard
+      (cl-loop for file in (if wildcard
                             (directory-files (file-name-directory filename) t filename)
                           (directory-files filename t))
             do (insert-directory file switches)))))
@@ -779,7 +780,7 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-handle-dired-insert-directory (dir switches &optional file-list
                                                   wildcard hdr)
   (if file-list
-      (loop for file in file-list
+      (cl-loop for file in file-list
             do (dropbox-handle-insert-directory (concat dir file) switches))
     (dropbox-handle-insert-directory dir switches wildcard t)))
 
@@ -957,7 +958,7 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
   if the user confirms."
 
   ; TODO: implement lockname and mustbenew
-  (assert (not append)) ; TODO: implement append
+  (cl-assert (not append)) ; TODO: implement append
 
   (let ((localfile (make-auto-save-file-name)))
     (write-region start end localfile nil 1)
