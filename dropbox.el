@@ -9,6 +9,7 @@
 ;; Keywords: dropbox
 ;; Contributors:
 ;;     Drew Haven      <ahaven@alum.mit.edu>
+;;     Max Satula      <maksym.satula@gmail.com>
 
 ;; This program is free software: you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -39,7 +40,6 @@
 ;; - Implement perma-trashing files
 ;; - Make RECURSIVE on DELETE-DIRECTORY work lock-free using /sync/batch
 ;; - Figure out why TRASH is not passed to DELETE-DIRECTORY
-;; - "This file has auto-save data"
 ;; - Use locale on authenticating the app (oauth library has issues)
 ;; - Request confirmation properly for OK-IF-ALREADY-EXISTS in move and copy
 ;; - DIRED-COMPRESS-FILE is not atomic.  Use /sync/batch
@@ -47,7 +47,7 @@
 
 ;; Suggestion to developers: M-x occur ";;;"
 
-(require 'oauth)
+(require 'request)
 (require 'json)
 (require 'cl-lib)
 
@@ -58,13 +58,8 @@
   :prefix "dropbox-"
   :group 'file)
 
-(defcustom dropbox-token-file "~/.emacs.d/dropbox-token"
-  "The file where dropbox.el will store your Dropbox credentials"
-  :group 'dropbox
-  :type 'string)
-
-(defcustom dropbox-locale "en_US"
-  "The locale in which to return file sizes and times"
+(defcustom dropbox-access-token ""
+  "Access Token to access Dropbox"
   :group 'dropbox
   :type 'string)
 
@@ -76,68 +71,20 @@ concurrently modify your dropbox."
   :group 'dropbox
   :type 'integer)
 
-(defcustom dropbox-consumer-key ""
-  "The dropbox.el consumer key.  Dropbox uses OAuth 1.0, which
-relies upon a secret known only to the app that accesses Dropbox.
-Run `dropbox-connect` to learn more about how to set up dropbox.el."
-  :group 'dropbox
-  :type 'string)
-
-(defcustom dropbox-consumer-secret ""
-  "The dropbox.el consumer secret.  Dropbox uses OAuth 1.0, which
-relies upon a secret known only to the app that accesses Dropbox.
-Run `dropbox-connect` to learn more about how to set up dropbox.el."
-  :group 'dropbox
-  :type 'string)
-
 (defcustom dropbox-verbose nil
   "Whether dropbox.el should `message` debug messages.  Helpful for
 debugging but otherwise very intrusive."
   :group 'dropbox
   :type 'boolean)
 
-; OAuth URL Endpoints
-(defvar dropbox-request-url       "https://api.dropbox.com/1/oauth/request_token")
-(defvar dropbox-access-url        "https://api.dropbox.com/1/oauth/access_token")
-(defvar dropbox-authorization-url "https://api.dropbox.com/1/oauth/authorize")
-
-; Dropbox URL Endpoint hosts
-(defvar dropbox-api-host "api.dropbox.com")
-(defvar dropbox-api-content-host "api-content.dropbox.com")
-(defvar dropbox-content-apis '("files" "files_put" "thumbnails"
-                               "commit_chunked_upload"))
-; Locale information
-(defvar dropbox-get-not-locale '("files" "copy_ref" "thumbnails"))
-(defvar dropbox-post-not-locale '("chunked_upload"))
-
-
 ; Do not edit the prefix -- lots of hard-coded regexes everywhere
 (defvar dropbox-prefix "/db:")
 (defvar dropbox-cache '())
-(defvar dropbox-access-token nil)
 
 ;;; Utilities
 
 (defun dropbox-message (fmt-string &rest args)
   (when dropbox-verbose (apply 'message fmt-string args)))
-
-(defconst url-non-sanitized-chars
-  (delete ?~ (append url-unreserved-chars '(?/ ?:))))
-
-(defun url-hexify-url (string)
-  "Return a new string that is STRING URI-encoded.
-First, STRING is converted to utf-8, if necessary.  Then, for each
-character in the utf-8 string, those found in `url-non-sanitized-chars'
-are left as-is, all others are represented as a three-character
-string: \"%\" followed by two lowercase hex digits."
-  (mapconcat (lambda (byte)
-               (if (memq byte url-non-sanitized-chars)
-                   (char-to-string byte)
-                 (format "%%%02x" byte)))
-             (if (multibyte-string-p string)
-                 (encode-coding-string string 'utf-8)
-               string)
-             ""))
 
 (defun dropbox-strip-final-slash (path)
   (cond
@@ -170,18 +117,9 @@ string: \"%\" followed by two lowercase hex digits."
   (setf path (dropbox-strip-final-slash path))
   (let ((cached (assoc (cons name path) dropbox-cache)))
     (if cached
-        (setf (cdr cached) (cons (current-time) value)))
-    (setf dropbox-cache (cons `((,name . ,path) . (,(current-time) . ,value))
-                              dropbox-cache))
-
-    (if (and (string= name "metadata")
-             (not (dropbox-error-p value))
-             (assoc 'contents value))
-        (cl-loop for ent across (cdr (assoc 'contents value))
-              for path = (concat dropbox-prefix
-                                 (string-strip-prefix "/" (cdr (assoc 'path ent))))
-              do (dropbox-cache "metadata" path ent)))
-
+        (setf (cdr cached) (cons (current-time) value))
+      (setf dropbox-cache (cons `((,name . ,path) . (,(current-time) . ,value))
+				dropbox-cache)))
     value))
 
 (defun dropbox-un-cache (name path)
@@ -195,128 +133,82 @@ string: \"%\" followed by two lowercase hex digits."
 
 ;;; Requesting URLs
 
-(defun dropbox-url (name &optional path)
-  (let ((ppath (concat "https://"
-                       (if (member name dropbox-content-apis)
-                           dropbox-api-content-host
-                         dropbox-api-host)
-                       "/1/" name)))
-    (if path
-        (concat ppath "/dropbox/" (url-hexify-url (string-strip-prefix "/" (dropbox-strip-prefix path))))
-      ppath)))
+(defconst dropbox--functions
+  '((list     . ("https://api.dropboxapi.com/2/files/list_folder"      "POST" json-read "application/json"))
+    (metadata . ("https://api.dropboxapi.com/2/files/get_metadata"     "POST" json-read "application/json"))
+    (download . ("https://content.dropboxapi.com/2/files/download"     "GET"  buffer-string))
+    (upload   . ("https://content.dropboxapi.com/2/files/upload"       "POST" json-read "application/octet-stream"))
+    (usage    . ("https://api.dropboxapi.com/2/users/get_space_usage"  "POST" json-read))
+    (mkdir    . ("https://api.dropboxapi.com/2/files/create_folder_v2" "POST" json-read "application/json"))
+    (rm       . ("https://api.dropboxapi.com/2/files/delete_v2"        "POST" json-read "application/json"))))
 
-(defvar curl-tracefile nil)
+(defun dropbox-request (func &optional data api-arg)
+  (let* ((func-params (alist-get func dropbox--functions))
+	 (url (car func-params))
+	 (method (cadr func-params))
+	 (parser (nth 2 func-params))
+	 (content-type (nth 3 func-params))
+	 (headers (list (cons "Authorization" (concat "Bearer " dropbox-access-token))))
+	 (headers (if content-type (cons (cons "Content-Type" content-type) headers) headers))
+	 (headers (if api-arg (cons (cons "Dropbox-API-Arg" api-arg) headers) headers))
+	 (response (with-default-directory "~/" (request url
+	     :sync t
+	     :type method
+	     :data data
+	     :headers headers
+	     :parser parser))))
+    (or (request-response-error-thrown response)
+	(request-response-data response))))
 
-(defun dropbox-get (name &optional path)
-  (dropbox-message "Requesting %s for %s" name path)
-  (with-default-directory "~/"
-    (let ((extra-curl-args (if (and curl-tracefile
-                                    (not extra-curl-args))
-                               `("--trace" ,curl-tracefile)
-                               extra-curl-args))
-          (oauth-nonce-function (function oauth-internal-make-nonce)))
+(defun dropbox--sanitize-path (path)
+  (cond
+   ((string= path "/") "")
+   (t (dropbox-strip-final-slash (if (string-prefix-p "/" path) path (concat "/" path))))))
 
-      (oauth-fetch-url dropbox-access-token
-                       (concat (dropbox-url name path)
-                               (if (not (member name dropbox-get-not-locale))
-                                   (concat "?locale=" dropbox-locale) ""))))))
+(defun dropbox--metadata (path)
+  (dropbox-message "Getting metadata for >%s<" path)
+  (let ((path (dropbox--sanitize-path path)))
+  (or (and (string= path "")
+	   '((\.tag . "folder") (name . "") (path_lower . "") (path_display . "")))
+      (dropbox-cached 'metadata path)
+      (dropbox-cache
+       'metadata path
+       (dropbox-request
+	'metadata
+	(json-encode `(("path" . ,(encode-coding-string path 'utf-8))
+		       ("include_media_info" . :json-false)
+		       ("include_deleted" . :json-false)
+		       ("include_has_explicit_shared_members" . :json-false))))))))
 
-(defun dropbox-get-http-code (buf)
-  (save-excursion
-    (with-current-buffer buf
-      (beginning-of-buffer)
-      (end-of-line)
-      (let ((rline (buffer-substring (point-min) (point))))
-        (string-match (concat "^\\(HTTP/[\\.[:digit:]]+\\)" "[[:space:]]+"
-                              "\\([[:digit:]]\\{3\\}\\)" "[[:space:]]+"
-                              "\\(.*\\)$")
-                      rline)
-        (list (match-string 1 rline) (string-to-number (match-string 2 rline))
-              (match-string 3 rline))))))
+(defun dropbox--list (path)
+  (dropbox-message "LIST >%s<" path)
+  (let ((path (dropbox--sanitize-path path)))
+  (or (dropbox-cached 'list path)
+      (dropbox-cache
+       'list path
+       (apply #'vector
+       (mapcar
+	(lambda (f) (substring (alist-get 'path_display f) 1))
+	(alist-get
+	 'entries
+	 (dropbox-request
+	  'list
+	  (json-encode `(("path" . ,(encode-coding-string path 'utf-8))
+			 ("recursive" . :json-false)
+			 ("include_media_info" . :json-false)
+			 ("include_deleted" . :json-false)
+			 ("include_has_explicit_shared_members" . :json-false)
+			 ("include_mounted_folders" . t)))))))))))
 
-(defun dropbox-http-success-p (code)
-  (and (>= (cadr code) 200) (< (cadr code) 300)))
+(defun dropbox--space-usage ()
+  (or (dropbox-cached 'usage nil)
+      (dropbox-cache
+       'usage nil
+	 (dropbox-request
+	  'usage))))
 
-(defun dropbox-http-down-p (code)
-  (and (>= (cadr code) 500) (< (cadr code) 600)))
-
-(defun dropbox-error-p (json)
-  (assoc 'error json))
-
-(defun dropbox-get-json (name &optional path want-contents)
-  "Get JSON for the NAME endpoint for path PATH.  The 'contents
-field is not guaranteed to be present unless WANT-CONTENTS is
-non-nil."
-
-  (let ((cached (dropbox-cached name path)))
-    (when (and want-contents (not (assoc 'contents cached)))
-      (setf cached nil))
-    (or cached
-        (with-current-buffer (dropbox-get name path)
-          (let ((code (dropbox-get-http-code (current-buffer))))
-            (if (dropbox-http-down-p code)
-                (error "Dropbox seems to be having problems: %d %s"
-                       (cadr code) (caddr code))))
-          (beginning-of-line)
-          (let ((json-false nil))
-            (dropbox-cache name path (json-read)))))))
-
-(defun dropbox-post (name &optional path args)
-  (dropbox-un-cache name path)
-  (dropbox-message "Requesting %s for %s" name path)
-
-  (let* ((oauth-nonce-function (function oauth-internal-make-nonce))
-         (buf (with-default-directory "~/"
-               (oauth-post-url dropbox-access-token
-                               (concat (dropbox-url name path)
-                                       (if (not (member name dropbox-post-not-locale))
-                                           (concat "?locale=" dropbox-locale) ""))
-                               args))))
-
-    (with-current-buffer buf
-      (let ((code (dropbox-get-http-code buf)))
-        (if (dropbox-http-down-p code)
-            (error "Dropbox seems to be having problems: %d %s"
-                   (cadr code) (cl-caddr code))))
-      (beginning-of-line)
-      (let ((json-false nil))
-        (json-read)))))
-
-;;; Authentication
-
-(defun dropbox-authenticate ()
-  "Get authentication token for dropbox"
-
-  (if (file-exists-p dropbox-token-file)
-      (save-excursion
-        (find-file dropbox-token-file)
-        (let ((str (buffer-substring (point-min) (point-max))))
-          (if (string-match "\\([^:]*\\):\\(.*\\)" str)
-              (setq dropbox-access-token
-                    (make-oauth-access-token
-                     :consumer-key dropbox-consumer-key
-                     :consumer-secret dropbox-consumer-secret
-                     :auth-t (make-oauth-t
-                              :token (match-string 1 str)
-                              :token-secret (match-string 2 str))))))
-        (save-buffer)
-        (kill-this-buffer)))
-  (unless dropbox-access-token ; Oh, we need to get a token
-    (setq dropbox-access-token
-          (let ((oauth-nonce-function (function oauth-internal-make-nonce)))
-            (oauth-authorize-app dropbox-consumer-key dropbox-consumer-secret
-                                 dropbox-request-url dropbox-access-url
-                                 dropbox-authorization-url)))
-    (save-excursion
-      (find-file dropbox-token-file)
-      (end-of-buffer)
-      (let ((token (oauth-access-token-auth-t dropbox-access-token)))
-        (insert (format "%s:%s\n"
-                        (oauth-t-token token)
-                        (oauth-t-token-secret token))))
-      (save-buffer)
-      (kill-this-buffer)))
-  dropbox-access-token)
+(defun dropbox-error-p (response)
+  (eq 'error (car response)))
 
 ;;; Hooking into Dropbox
 
@@ -324,7 +216,6 @@ non-nil."
   "Connect to Dropbox, hacking the \"/db:\" syntax into `find-file`."
   (interactive)
 
-  (dropbox-authenticate)
   (setf file-name-handler-alist
         (cons '("\\`/db:" . dropbox-handler) file-name-handler-alist)))
 
@@ -483,7 +374,7 @@ non-nil."
   nil)
 
 (defun dropbox-handle-make-auto-save-file-name ()
-  (make-temp-file (file-name-nondirectory buffer-file-name)))
+  (make-temp-name (concat "/tmp/dropbox-el-" (file-name-nondirectory buffer-file-name))))
 
 (defun dropbox-handle-unhandled-file-name-directory (filename)
   dropbox-prefix)
@@ -497,14 +388,11 @@ non-nil."
 
 (defun dropbox-handle-file-directory-p (filename)
   "Return t if file FILENAME is a directory, too"
-
   (if (or (string= filename dropbox-prefix)
           (string= filename (concat dropbox-prefix "/")))
       t
-    (let ((resp (dropbox-get-json "metadata" filename)))
-      (if (dropbox-error-p resp)
-          nil
-        (and (cdr (assoc 'is_dir resp)) (not (assoc 'is_deleted resp)))))))
+    (string= "folder"
+	     (alist-get '.tag (dropbox--metadata (concat "/" (dropbox-strip-prefix filename)))))))
 
 (defun dropbox-parent (filename)
   "Get the name of the directory containing FILENAME, even if
@@ -515,13 +403,12 @@ FILENAME names a directory"
 (defun dropbox-handle-file-executable-p (filename)
   (file-directory-p filename))
 
+;; TODO suppress an error message below if the file does not exist
+;; REQUEST [error] Error (error) while connecting to https://api.dropboxapi.com/2/files/get_metadata
 (defun dropbox-handle-file-exists-p (filename)
   "Return t if file FILENAME exists"
-
-  (let ((resp
-         (dropbox-get-json "metadata" filename)))
-    (and (not (dropbox-error-p resp))
-         (not (assoc 'is_deleted resp)))))
+  (when (not (dropbox-error-p (dropbox--metadata (concat "/" (dropbox-strip-prefix filename)))))
+    t))
 
 (defun dropbox-handle-file-newer-than-file-p (file1 file2)
   ; these files might not both be dropbox files
@@ -574,23 +461,24 @@ FILENAME names a directory"
 
 (defun dropbox-handle-file-attributes (filename &optional id-format)
   (let ((resp
-         (dropbox-get-json "metadata" filename)))
-    (if (dropbox-error-p resp)
-        nil
-      (let ((date (date-to-time (cdr (assoc 'modified resp)))))
-      (list (cdr (assoc 'is_dir resp)) ; Is dir?
+         (dropbox--metadata (dropbox-strip-prefix filename))))
+    ;; (if (dropbox-error-p resp)
+    ;;     nil
+    (let ((date (date-to-time (alist-get 'client_modified resp)))
+	  (folder (string= "folder" (alist-get '.tag resp)))) ;; Is dir?
+      (list folder
             1 ; Number of links
             0 ; UID
             0 ; GID
             date ; atime
             date ; mtime
             date ; ctime
-            (cdr (assoc 'bytes resp)) ; size in bytes
+            (or (alist-get 'size resp) 0) ; size in bytes
             ; TODO figure out if folder has any shares
-            (concat (if (cdr (assoc 'is_dir resp)) "d" "-") "rwx------") ; perms
+            (concat (if folder "d" "-") "rwx------") ; perms
             nil
             0
-            0)))))
+            0))))
 
 (defun dropbox-handle-file-modes (filename)
   448) ; 448 = 0b111000000 is rwx------
@@ -617,12 +505,12 @@ FILENAME names a directory"
   "Check that the file BUF is visiting hasn't changed since BUF was opened."
 
   (let* (metadata new-metadata)
-    (setf metadata (dropbox-cached "metadata" (buffer-file-name buf)))
-    (dropbox-un-cache "metadata" (buffer-file-name buf))
-    (setf newmetadata (dropbox-get-json "metadata" (buffer-file-name buf)))
+    (setf metadata (dropbox-cached 'metadata (buffer-file-name buf)))
+    (dropbox-un-cache 'metadata (buffer-file-name buf))
+    (setf newmetadata (dropbox--metadata (buffer-file-name buf)))
 
     (or (dropbox-error-p newmetadata)
-        (string= (cdr (assoc 'rev metadata)) (cdr (assoc 'rev newmetadata))))))
+        (string= (alist-get 'rev metadata) (alist-get 'rev newmetadata)))))
 
 ;;; Directory Contents
 
@@ -632,8 +520,8 @@ FILENAME names a directory"
       str))
 
 (defun dropbox-extract-fname (file path &optional full)
-  (let ((fname (string-strip-prefix "/" (cdr (assoc 'path file)))))
-    (if (cdr (assoc 'is_dir file)) (setf fname (concat fname "/")))
+  (let ((fname (string-strip-prefix "/" (alist-get 'path_display file))))
+    (if (string= "folder" (alist-get '.tag file)) (setf fname (concat fname "/")))
     (if full (concat dropbox-prefix fname)
       (string-strip-prefix "/" (string-strip-prefix path fname)))))
 
@@ -648,11 +536,11 @@ Otherwise, the list returned is sorted with `string-lessp'.
 NOSORT is useful if you plan to sort the result yourself."
 
   (let* ((path (dropbox-strip-prefix directory))
-	 (metadata (dropbox-get-json "metadata" directory t)) ; want-contents: t
+	 (metadata (dropbox--metadata path))
 	 (unsorted
-	  (if (cdr (assoc 'is_dir metadata))
-	      (cl-loop for file across (cdr (assoc 'contents metadata))
-		    for fname = (dropbox-extract-fname file path full)
+	  (if (string= "folder" (alist-get '.tag metadata))
+	      (cl-loop for file across (dropbox--list path)
+		    for fname = (dropbox-extract-fname (dropbox--metadata file) path full)
 		    if (or (null match) (string-match match fname))
 		    collect fname)
 	    nil)))
@@ -690,24 +578,27 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-handle-make-directory (dir &optional parents)
   "Create the directory DIR and, if PARENT is non-nil, all parents"
 
-  (if (or parents
-          (let ((parent (dropbox-parent dir)))
-            (and (file-exists-p parent) (file-directory-p parent))))
-      (dropbox-cache "metadata" dir
-                     (dropbox-post
-                      "fileops/create_folder" nil
-                      `(("root" . "dropbox")
-                        ("path" . ,(dropbox-strip-prefix dir)))))))
+  (let ((path (dropbox--sanitize-path (dropbox-strip-prefix dir))))
+    (if (or parents
+            (let ((parent (dropbox-parent dir)))
+              (and (file-exists-p parent) (file-directory-p parent))))
+	(dropbox-cache
+	 'metadata path
+	 (cons '(\.tag . "folder")
+	       (alist-get
+		'metadata
+		(dropbox-request 'mkdir
+				 (json-encode `(("path" . ,(encode-coding-string path 'utf-8))
+						("autorename" . :json-false))))))))))
 
 (defun dropbox-handle-delete-file (filename &optional trash)
   "Delete file name FILENAME.  If TRASH is nil, permanently delete it."
 
   (if trash
-      (dropbox-cache "metadata" filename
-                     (dropbox-post "fileops/delete" nil
-                                   `(("root" . "dropbox")
-                                     ("path" . ,(dropbox-strip-prefix
-                                                 filename)))))
+      (let ((path (dropbox--sanitize-path (dropbox-strip-prefix filename))))
+      (dropbox-un-cache 'metadata path)
+      (dropbox-request 'rm
+		       (json-encode `(("path" . ,(encode-coding-string path 'utf-8))))))
     (error "Perma-trashing files not yet implemented")))
 
 (defun dropbox-handle-delete-directory (directory &optional recursive trash)
@@ -718,16 +609,13 @@ NOSORT is useful if you plan to sort the result yourself."
       (error "Non-recursive directory delete not yet implemented")
     (if nil ;(not trash) ; Emacs passes only one argument from delete-directory
         (error "Perma-trashing directories not yet implemented")
-      (dropbox-cache "metadata" directory
-                     (dropbox-post "fileops/delete" nil
-                                   `(("root" . "dropbox")
-                                     ("path" . ,(dropbox-strip-prefix
-                                                 directory))))))))
+      (dropbox-handle-delete-file directory trash))))
 
 (defun dropbox-handle-dired-uncache (dir)
   "Remove DIR from the dropbox.el metadata cache"
 
-  (dropbox-un-cache "metadata" dir))
+  (dropbox-un-cache 'metadata dir)
+  (dropbox-un-cache 'list dir))
 
 (defun dropbox-handle-insert-directory
   (filename switches &optional wildcard full-directory-p)
@@ -748,8 +636,10 @@ NOSORT is useful if you plan to sort the result yourself."
     ; TODO: look into uids, gids, and reformatting the date    
     ; example directory listing:
     ; -rw-r--r--   1 ahaven  staff   1476 Jan  7 12:48 tramp.py
+    (dropbox-message "FILENAME %s ATTR %s" filename (file-attributes filename))
     (if (not full-directory-p)
-        (let ((attributes (file-attributes filename 'string)))
+        (let ((attributes (file-attributes filename)))
+	  (dropbox-message "NOT FULL DIR")
           (insert (format "  %s %2d %8s %8s %8d %s "
                           (elt attributes 8)
                           (elt attributes 1)
@@ -762,15 +652,14 @@ NOSORT is useful if you plan to sort the result yourself."
                 (isdir (elt attributes 0)))
             (insert fname "\n")
             (put-text-property start (- (point) 1) 'dired-filename t)))
-      (let ((acct-info (dropbox-get-json "account/info")))
-        (unless (null acct-info)
-          (let ((quota-info (cdr (assoc 'quota_info acct-info))))
-            (let ((total (cdr (assoc 'quota quota-info)))
-                  (normal (cdr (assoc 'normal quota-info)))
-                  (shared (cdr (assoc 'shared quota-info))))
+      (let ((usage (dropbox--space-usage)))
+	(dropbox-message "FULL DIR")
+        (unless (null usage)
+          (let ((used (alist-get 'used usage))
+		(allocated (alist-get 'allocated (alist-get 'allocation usage))))
             (insert (format "  used %d available %d (%.0f%% total used)"
-                            (+ shared normal) (- total normal shared)
-                            (/ (* (+ shared normal) 100.0) total))))
+                            used (- allocated used)
+                            (/ (* used 100.0) allocated)))
             (newline))))
       (cl-loop for file in (if wildcard
                             (directory-files (file-name-directory filename) t filename)
@@ -779,6 +668,7 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-dired-insert-directory (dir switches &optional file-list
                                                   wildcard hdr)
+  (dropbox-message "Dired insert dir %s switches %s file-list %s wildcard %s hdr %s" dir switches file-list wildcard hdr)
   (if file-list
       (cl-loop for file in file-list
             do (dropbox-handle-insert-directory (concat dir file) switches))
@@ -787,6 +677,7 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-handle-copy-file (file newname &optional ok-if-already-exists
                                       keep-time preserve-uid-gid preserve-selinux-context)
   ; TODO: implement ok-if-already-exists parameter
+  (error "TODO Dropbox file copy is not implemented for API v2 yet")
   (cond
    ((and (dropbox-file-p file) (dropbox-file-p newname))
     (dropbox-cache "metadata" newname
@@ -802,6 +693,7 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-copy-directory (directory newname &optional keep-time
                                                 parents copy-contents)
+  (error "TODO Dropbox directory copy is not implemented for API v2 yet")
   (cond
    ((and (dropbox-file-p file) (dropbox-file-p newname))
     (if parents (make-directory (dropbox-parent newname) parents))
@@ -814,6 +706,7 @@ NOSORT is useful if you plan to sort the result yourself."
 NEWNAME already exists.  Note that the move is atomic if both FILE and NEWNAME
 are /db: files, but otherwise is not necessarily atomic."
 
+  (error "TODO Dropbox rename file is not implemented for API v2 yet")
   (cond
    ((and (dropbox-file-p file) (dropbox-file-p newname))
     (dropbox-un-cache "metadata" file)
@@ -849,65 +742,35 @@ are /db: files, but otherwise is not necessarily atomic."
   ; TODO: Fails on images with switch to deleted buffer
   ; TODO: implement replace
   (barf-if-buffer-read-only)
-  (let* ((buf (current-buffer))
-         (respbuf (dropbox-get "files" filename))
-         (http-code (dropbox-get-http-code respbuf)))
-    (if (file-exists-p filename)
-        (progn
-          (switch-to-buffer respbuf)
-          (beginning-of-buffer)
-          (re-search-forward "\r\n\r\n")
-          (delete-region (point-min) (point))
-          (switch-to-buffer buf)
-          (save-excursion (insert-buffer-substring respbuf beg end)))
-      (switch-to-buffer buf)
-      (set-buffer-modified-p nil))
-    (when visit
-      (setf buffer-file-name filename)
-      (setf buffer-read-only (not (file-writable-p filename))))))
-
-; Redefine oauth-curl-retrieve to take extra-curl-args and to echo the curl command
-(defun oauth-curl-retrieve (url)
-  "Retrieve via curl"
-  (url-gc-dead-buffers)
-  (set-buffer (generate-new-buffer " *oauth-request*"))
-  (let ((curl-args `("-s" ,(when oauth-curl-insecure "-k")
-                     "-X" ,url-request-method
-                     "-i" ,url
-                     ,@(when oauth-post-vars-alist
-                         (apply
-                          'append
-                          (mapcar
-                           (lambda (pair)
-                             (list
-                              "-d"
-                              (concat (car pair) "="
-                                      (oauth-hexify-string (cdr pair)))))
-                           oauth-post-vars-alist)))
-                     ,@(oauth-headers-to-curl url-request-extra-headers)
-                     ,@extra-curl-args)))
-    (dropbox-message "curl-args: %s" curl-args)
-    (apply 'call-process "curl" nil t nil curl-args))
-  (url-mark-buffer-as-dead (current-buffer))
-  (current-buffer))
+  (if (file-exists-p filename)
+      (save-excursion (insert (dropbox-request 'download nil (json-encode `(("path" . ,(encode-coding-string
+									(dropbox--sanitize-path (dropbox-strip-prefix filename))
+									'utf-8)))))))
+    (set-buffer-modified-p nil))
+  (when visit
+    (setf buffer-file-name filename)
+    (setf buffer-read-only (not (file-writable-p filename)))))
 
 (defvar extra-curl-args nil)
 
 (defun dropbox-upload (local-path remote-path)
-  (save-excursion
-    (let* ((extra-curl-args `("--data-binary" ,(concat "@" local-path)))
-           (url-request-extra-headers '(("Content-Type" . "application/octet-stream")))
-           (resp (dropbox-post "files_put" remote-path '())))
-      (if (dropbox-error-p resp)
-          nil
-        (dropbox-cache "metadata" remote-path resp)))))
+  (let ((remote (dropbox--sanitize-path (dropbox-strip-prefix remote-path))))
+    (dropbox-cache 'metadata remote
+		   (dropbox-request 'upload (with-temp-buffer
+					      (insert-file-contents local-path)
+					      (buffer-string))
+				    (json-encode `(("path" . ,(encode-coding-string
+							       remote
+							       'utf-8))
+						   ("mode" . "add")("autorename" . t)
+						   ("mute" . :json-false)("strict_conflict" . :json-false)))))))
 
 (defun dropbox-handle-file-local-copy (filename)
   "Downloads a copy of a Dropbox file to a temporary file."
+  (error "TODO Dropbox file local copy is not implemented for API v2 yet")
   (save-excursion
     (let* ((newname (make-temp-file (file-name-nondirectory filename)))
-           (respbuf (dropbox-get "files" file))
-           (http-code (dropbox-get-http-code respbuf)))
+           (respbuf (dropbox-get "files" file)))
       (if (not (file-exists-p filename))
           (error "File to copy doesn't exist")
         (with-current-buffer respbuf
