@@ -104,6 +104,8 @@ debugging but otherwise very intrusive."
 ;;; Caching for the Dropbox API
 
 (defun dropbox-cached (name path &optional no-expire)
+  (when (string-prefix-p "/db:" path)
+    (setf path (dropbox-strip-prefix path)))
   (let ((cached (assoc (cons name (dropbox-strip-final-slash path))
                        dropbox-cache)))
     (if (and cached
@@ -114,6 +116,8 @@ debugging but otherwise very intrusive."
       nil)))
 
 (defun dropbox-cache (name path value)
+  (when (string-prefix-p "/db:" path)
+    (setf path (dropbox-strip-prefix path)))
   (setf path (dropbox-strip-final-slash path))
   (let ((cached (assoc (cons name path) dropbox-cache)))
     (if cached
@@ -123,6 +127,8 @@ debugging but otherwise very intrusive."
     value))
 
 (defun dropbox-un-cache (name path)
+  (when (string-prefix-p "/db:" path)
+    (setf path (dropbox-strip-prefix path)))
   (setf dropbox-cache (cl-remove-if '(lambda (x) (equal (car x) (cons name path)))
                                  dropbox-cache)))
 
@@ -140,7 +146,9 @@ debugging but otherwise very intrusive."
     (upload   . ("https://content.dropboxapi.com/2/files/upload"       "POST" json-read "application/octet-stream"))
     (usage    . ("https://api.dropboxapi.com/2/users/get_space_usage"  "POST" json-read))
     (mkdir    . ("https://api.dropboxapi.com/2/files/create_folder_v2" "POST" json-read "application/json"))
-    (rm       . ("https://api.dropboxapi.com/2/files/delete_v2"        "POST" json-read "application/json"))))
+    (rm       . ("https://api.dropboxapi.com/2/files/delete_v2"        "POST" json-read "application/json"))
+    (copy     . ("https://api.dropboxapi.com/2/files/copy_v2"          "POST" json-read "application/json"))
+    (move     . ("https://api.dropboxapi.com/2/files/move_v2"          "POST" json-read "application/json"))))
 
 (defun dropbox-request (func &optional data api-arg)
   (let* ((func-params (alist-get func dropbox--functions))
@@ -583,7 +591,7 @@ NOSORT is useful if you plan to sort the result yourself."
             (let ((parent (dropbox-parent dir)))
               (and (file-exists-p parent) (file-directory-p parent))))
 	(dropbox-cache
-	 'metadata path
+	 'metadata dir
 	 (cons '(\.tag . "folder")
 	       (alist-get
 		'metadata
@@ -677,15 +685,18 @@ NOSORT is useful if you plan to sort the result yourself."
 (defun dropbox-handle-copy-file (file newname &optional ok-if-already-exists
                                       keep-time preserve-uid-gid preserve-selinux-context)
   ; TODO: implement ok-if-already-exists parameter
-  (error "TODO Dropbox file copy is not implemented for API v2 yet")
   (cond
    ((and (dropbox-file-p file) (dropbox-file-p newname))
-    (dropbox-cache "metadata" newname
-                   (dropbox-post
-                    "fileops/copy" nil
-                    `(("root" . "dropbox")
-                      ("from_path" . ,(dropbox-strip-prefix file))
-                      ("to_path" . ,(dropbox-strip-prefix newname))))))
+    (dropbox-cache 'metadata newname (dropbox-cached 'metadata file))
+    (dropbox-un-cache 'metadata (file-name-directory newname))
+    (let ((from-path (dropbox--sanitize-path (dropbox-strip-prefix file)))
+          (to-path (dropbox--sanitize-path (dropbox-strip-prefix newname))))
+      (dropbox-cache 'metadata newname
+                     (dropbox-request
+                      'copy
+                      (json-encode
+                       `(("from_path" . ,(encode-coding-string from-path 'utf-8))
+                         ("to_path" . ,(encode-coding-string to-path 'utf-8))))))))
    ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
     (move-file (file-local-copy file) newname))
    ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
@@ -693,7 +704,6 @@ NOSORT is useful if you plan to sort the result yourself."
 
 (defun dropbox-handle-copy-directory (directory newname &optional keep-time
                                                 parents copy-contents)
-  (error "TODO Dropbox directory copy is not implemented for API v2 yet")
   (cond
    ((and (dropbox-file-p file) (dropbox-file-p newname))
     (if parents (make-directory (dropbox-parent newname) parents))
@@ -706,23 +716,26 @@ NOSORT is useful if you plan to sort the result yourself."
 NEWNAME already exists.  Note that the move is atomic if both FILE and NEWNAME
 are /db: files, but otherwise is not necessarily atomic."
 
-  (error "TODO Dropbox rename file is not implemented for API v2 yet")
   (cond
    ((and (dropbox-file-p file) (dropbox-file-p newname))
-    (dropbox-un-cache "metadata" file)
-    (dropbox-un-cache "metadata" (file-name-directory file))
-    (dropbox-cache "metadata" newname
-                   (dropbox-post
-                    "fileops/move" nil
-                    `(("root" . "dropbox")
-                      ("from_path" . ,(dropbox-strip-prefix file))
-                      ("to_path" . ,(dropbox-strip-prefix newname))))))
+    (dropbox-cache 'metadata newname (dropbox-cached 'metadata file))
+    (dropbox-un-cache 'metadata file)
+    (dropbox-un-cache 'metadata (file-name-directory file))
+    (dropbox-un-cache 'metadata (file-name-directory newname))
+    (let ((from-path (dropbox--sanitize-path (dropbox-strip-prefix file)))
+          (to-path (dropbox--sanitize-path (dropbox-strip-prefix newname))))
+      (dropbox-cache 'metadata newname
+                     (dropbox-request
+                      'move
+                      (json-encode
+                       `(("from_path" . ,(encode-coding-string from-path 'utf-8))
+                         ("to_path" . ,(encode-coding-string to-path 'utf-8))))))))
    ((and (dropbox-file-p file) (not (dropbox-file-p newname)))
     (copy-file file newname ok-if-already-exists)
-    (delete-file file))
+    (delete-file file t))
    ((and (not (dropbox-file-p file)) (dropbox-file-p newname))
     (copy-file file newname ok-if-already-exists)
-    (delete-file file))))
+    (delete-file file t))))
 
 (defun dropbox-handle-make-symbolic-link (filename linkname
                                                    &optional ok-if-already-exists)
@@ -739,7 +752,6 @@ are /db: files, but otherwise is not necessarily atomic."
 ;;; File contents
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
-  ; TODO: Fails on images with switch to deleted buffer
   ; TODO: implement replace
   (barf-if-buffer-read-only)
   (if (file-exists-p filename)
@@ -751,11 +763,9 @@ are /db: files, but otherwise is not necessarily atomic."
     (setf buffer-file-name filename)
     (setf buffer-read-only (not (file-writable-p filename)))))
 
-(defvar extra-curl-args nil)
-
 (defun dropbox-upload (local-path remote-path)
   (let ((remote (dropbox--sanitize-path (dropbox-strip-prefix remote-path))))
-    (dropbox-cache 'metadata remote
+    (dropbox-cache 'metadata remote-path
 		   (dropbox-request 'upload (with-temp-buffer
 					      (insert-file-contents local-path)
 					      (buffer-string))
@@ -767,28 +777,28 @@ are /db: files, but otherwise is not necessarily atomic."
 
 (defun dropbox-handle-file-local-copy (filename)
   "Downloads a copy of a Dropbox file to a temporary file."
-  (error "TODO Dropbox file local copy is not implemented for API v2 yet")
+  (let ((file (dropbox--sanitize-path (dropbox-strip-prefix filename))))
   (save-excursion
-    (let* ((newname (make-temp-file (file-name-nondirectory filename)))
-           (respbuf (dropbox-get "files" file)))
+    (let* ((newname (make-temp-file (file-name-nondirectory filename))))
       (if (not (file-exists-p filename))
           (error "File to copy doesn't exist")
-        (with-current-buffer respbuf
-          (beginning-of-buffer)
-          (re-search-forward "\r\n\r\n")
-          (write-region (point) (point-max) newname)))
-      newname)))
+        (with-temp-file newname
+          (set-buffer-file-coding-system 'raw-text)
+          (dropbox-handle-insert-file-contents filename)))
+      newname))))
 
 (defun dropbox-handle-dired-compress-file (file)
   "Compress a file in Dropbox.  Super-inefficient."
-
   (let* ((temp (file-local-copy file))
-         (temp.z (dired-compress-file file))
+         (temp.z (dired-compress-file temp))
          (suffix (if (string-prefix-p temp temp.z)
                      (string-strip-prefix temp temp.z)
                    ".gz")))
+    (message "compressing %s %s %s %s" file temp temp.z suffix)
+    (unless temp.z
+      (error "Invalid zipped file %s" temp.z))
     (dropbox-upload temp.z (concat file suffix))
-    (delete-file file)))
+    (delete-file file t)))
 
 (defun dropbox-handle-write-region (start end filename &optional
 					  append visit lockname mustbenew)
