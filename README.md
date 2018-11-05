@@ -36,6 +36,11 @@ For example, if you open the path `/db:`, you'll get a Dired window in
 the root of your Dropbox folder. You can use many of the usual Dired
 commands from here; you can also open files to edit them.
 
+Known Bugs
+----------
+
++ `dropbox.el` seems to be incompatible with Helm.
+
 Unsupported
 -----------
 
