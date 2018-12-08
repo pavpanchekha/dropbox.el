@@ -768,7 +768,7 @@ are /db: files, but otherwise is not necessarily atomic."
     (setf buffer-file-name filename)
     (setf buffer-read-only (not (file-writable-p filename)))))
 
-(defun dropbox-upload (local-path remote-path)
+(defun dropbox-upload (local-path remote-path &optional overwrite)
   (let ((remote (dropbox--sanitize-path (dropbox-strip-prefix remote-path))))
     (dropbox-cache 'metadata remote-path
 		   (dropbox-request 'upload (with-temp-buffer
@@ -777,7 +777,8 @@ are /db: files, but otherwise is not necessarily atomic."
 				    (json-encode `(("path" . ,(encode-coding-string
 							       remote
 							       'utf-8))
-						   ("mode" . "add")("autorename" . t)
+						   ("mode" . ,(if overwrite "overwrite" "add"))
+                                                   ("autorename" . t)
 						   ("mute" . :json-false)("strict_conflict" . :json-false)))))))
 
 (defun dropbox-handle-file-local-copy (filename)
@@ -802,7 +803,7 @@ are /db: files, but otherwise is not necessarily atomic."
     (message "compressing %s %s %s %s" file temp temp.z suffix)
     (unless temp.z
       (error "Invalid zipped file %s" temp.z))
-    (dropbox-upload temp.z (concat file suffix))
+    (dropbox-upload temp.z (concat file suffix) t)
     (delete-file file t)))
 
 (defun dropbox-handle-write-region (start end filename &optional
@@ -840,7 +841,8 @@ The optional seventh arg MUSTBENEW, if non-nil, insists on a check
 
   (let ((localfile (make-auto-save-file-name)))
     (write-region start end localfile nil 1)
-    (let ((resp (dropbox-upload localfile filename)))
+    ;; TODO: Store old rev and use new rev to ensure we are updating
+    (let ((resp (dropbox-upload localfile filename t)))
       (if (dropbox-error-p resp)
           nil
         (when (stringp visit)
