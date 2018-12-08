@@ -752,12 +752,17 @@ are /db: files, but otherwise is not necessarily atomic."
 ;;; File contents
 
 (defun dropbox-handle-insert-file-contents (filename &optional visit beg end replace)
-  ; TODO: implement replace
   (barf-if-buffer-read-only)
+  (when (or beg end)
+    (error "Dropbox cannot handle beginning and end bytes on insert-file"))
   (if (file-exists-p filename)
-      (save-excursion (insert (dropbox-request 'download nil (json-encode `(("path" . ,(encode-coding-string
-									(dropbox--sanitize-path (dropbox-strip-prefix filename))
-									'utf-8)))))))
+      (save-excursion
+        (when replace
+          ;; TODO: retain point and mark when erasing
+          (erase-buffer))
+        (let* ((path (encode-coding-string (dropbox--sanitize-path (dropbox-strip-prefix filename)) 'utf-8))
+               (contents (dropbox-request 'download nil (json-encode `(("path" . ,path))))))
+          (insert contents)))
     (set-buffer-modified-p nil))
   (when visit
     (setf buffer-file-name filename)
