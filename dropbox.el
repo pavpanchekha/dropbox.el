@@ -163,6 +163,7 @@ debugging but otherwise very intrusive."
 	     :sync t
 	     :type method
 	     :data data
+             :error (cl-function (lambda (&rest rest) 'ok))
 	     :headers headers
 	     :parser parser))))
     (or (request-response-error-thrown response)
@@ -411,12 +412,9 @@ FILENAME names a directory"
 (defun dropbox-handle-file-executable-p (filename)
   (file-directory-p filename))
 
-;; TODO suppress an error message below if the file does not exist
-;; REQUEST [error] Error (error) while connecting to https://api.dropboxapi.com/2/files/get_metadata
 (defun dropbox-handle-file-exists-p (filename)
   "Return t if file FILENAME exists"
-  (when (not (dropbox-error-p (dropbox--metadata (concat "/" (dropbox-strip-prefix filename)))))
-    t))
+  (not (dropbox-error-p (dropbox--metadata (concat "/" (dropbox-strip-prefix filename))))))
 
 (defun dropbox-handle-file-newer-than-file-p (file1 file2)
   ; these files might not both be dropbox files
