@@ -774,7 +774,7 @@ are /db: files, but otherwise is not necessarily atomic."
           (erase-buffer))
         (let* ((path (encode-coding-string (dropbox--sanitize-path (dropbox-strip-prefix filename)) 'utf-8))
                (contents (dropbox-request 'download nil (json-encode `(("path" . ,path))))))
-          (insert contents)))
+          (insert (decode-coding-string contents 'iso-latin-1-unix))))
     (set-buffer-modified-p nil))
   (when visit
     (setf buffer-file-name filename)
@@ -801,7 +801,7 @@ are /db: files, but otherwise is not necessarily atomic."
       (if (not (file-exists-p filename))
           (error "File to copy doesn't exist")
         (with-temp-file newname
-          (set-buffer-file-coding-system 'raw-text)
+          (set-buffer-file-coding-system 'utf-8)
           (dropbox-handle-insert-file-contents filename)))
       newname))))
 
