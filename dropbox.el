@@ -470,7 +470,7 @@ FILENAME names a directory"
          (dropbox--metadata (dropbox-strip-prefix filename))))
     ;; (if (dropbox-error-p resp)
     ;;     nil
-    (let ((date (date-to-time (alist-get 'client_modified resp)))
+    (let ((date (date-to-time (or (alist-get 'client_modified resp) "Mon, 01 Jan 0000 00:00:00 +0000")))
 	  (folder (string= "folder" (alist-get '.tag resp)))) ;; Is dir?
       (list folder
             1 ; Number of links
