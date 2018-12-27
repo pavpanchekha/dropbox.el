@@ -399,7 +399,9 @@ dropbox-like files (/db:/something is transformed into /db:something)."
   (make-temp-name (concat "/tmp/dropbox-el-" (file-name-nondirectory buffer-file-name))))
 
 (defun dropbox-handle-unhandled-file-name-directory (filename)
-  dropbox-prefix)
+  "Files like /db:something are not usable without the intervention of a file
+handler, thus return `nil'."
+  nil)
 
 ;;; Predicates
 
