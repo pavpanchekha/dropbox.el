@@ -342,18 +342,32 @@ debugging but otherwise very intrusive."
     (match-string 1 filename))
    (t (substring filename 4))))
 
-(defun dropbox-handle-expand-file-name (filename &optional default-directory)
-  "Return the canonicalized, absolute version of FILENAME"
+(defun dropbox-remove-slash (filename)
+  "Transform /db:/notes into /db:notes."
+  (if (dropbox-file-p filename)
+      (if (string-match "^/db:/\\(.*\\)$" filename)
+          (concat dropbox-prefix (match-string 1 filename))
+        filename)
+    filename))
 
-  (if (or (file-name-absolute-p filename)
-          (not (dropbox-file-p default-directory)))
-      filename
-    (concat
-     dropbox-prefix
-     (substring
-      (expand-file-name filename
-                        (concat "/" (dropbox-strip-prefix default-directory)))
-      1))))
+(defun dropbox-run-real-handler (operation args)
+  "Invoke normal file name handler for OPERATION.
+First arg specifies the OPERATION, second arg is a list of arguments to
+pass to the OPERATION."
+  (let* ((inhibit-file-name-handlers
+          `(dropbox-handler
+            .
+            ,(and (eq inhibit-file-name-operation operation)
+                  inhibit-file-name-handlers)))
+         (inhibit-file-name-operation operation))
+    (apply operation args)))
+
+(defun dropbox-handle-expand-file-name (filename &optional dir)
+  "Like the normal operation, except that slashes are removed from
+dropbox-like files (/db:/something is transformed into /db:something)."
+  (dropbox-run-real-handler 'expand-file-name
+                            (list (dropbox-remove-slash filename)
+                                  (dropbox-remove-slash dir))))
 
 (defun dropbox-handle-file-truename (filename)
   filename)
