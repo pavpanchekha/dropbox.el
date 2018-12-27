@@ -379,10 +379,9 @@ dropbox-like files (/db:/something is transformed into /db:something)."
 
 (defun dropbox-handle-directory-file-name (directory)
   "Remove the final slash from a directory name"
-
-  (if (eq (aref directory (1- (length directory))) ?/)
-      (substring directory 0 -1)
-    directory))
+  (concat "/db:" (dropbox-run-real-handler
+                  'directory-file-name
+                  (list (dropbox-strip-prefix directory)))))
 
 (defun dropbox-handle-file-name-as-directory (directory)
   "Remove the final slash from a directory name"
