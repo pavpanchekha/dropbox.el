@@ -158,11 +158,11 @@ debugging but otherwise very intrusive."
 	 (content-type (nth 3 func-params))
 	 (headers (list (cons "Authorization" (concat "Bearer " dropbox-access-token))))
 	 (headers (if content-type (cons (cons "Content-Type" content-type) headers) headers))
-	 (headers (if api-arg (cons (cons "Dropbox-API-Arg" api-arg) headers) headers))
+	 (headers (if api-arg (cons (cons "Dropbox-API-Arg" (if api-arg (encode-coding-string api-arg 'utf-8) api-arg)) headers) headers))
 	 (response (with-default-directory "~/" (request url
 	     :sync t
 	     :type method
-	     :data data
+	     :data (if data (encode-coding-string data 'utf-8) data)
              :error (cl-function (lambda (&rest rest) 'ok))
 	     :headers headers
 	     :parser parser))))
@@ -546,7 +546,7 @@ FILENAME names a directory"
     (if full (concat dropbox-prefix fname)
       (string-strip-prefix "/" (string-strip-prefix path fname)))))
 
-(defun dropbox-handle-directory-files (directory &optional full match nosort)
+(defun dropbox-handle-directory-files (directory &optional full match nosort &rest args)
   "Return a list of names of files in DIRECTORY.
 There are three optional arguments:
 If FULL is non-nil, return absolute file names.  Otherwise return names
@@ -654,7 +654,7 @@ NOSORT is useful if you plan to sort the result yourself."
      "Inserting directory `ls %s %s', wildcard %s, fulldir %s"
      switches filename wildcard full-directory-p)
 
-    ; TODO: look into uids, gids, and reformatting the date    
+    ; TODO: look into uids, gids, and reformatting the date
     ; example directory listing:
     ; -rw-r--r--   1 ahaven  staff   1476 Jan  7 12:48 tramp.py
     (dropbox-message "FILENAME %s ATTR %s" filename (file-attributes filename))
@@ -775,7 +775,7 @@ are /db: files, but otherwise is not necessarily atomic."
           (erase-buffer))
         (let* ((path (encode-coding-string (dropbox--sanitize-path (dropbox-strip-prefix filename)) 'utf-8))
                (contents (dropbox-request 'download nil (json-encode `(("path" . ,path))))))
-          (insert (decode-coding-string contents 'iso-latin-1-unix))))
+          (insert (decode-coding-string contents 'utf-8))))
     (set-buffer-modified-p nil))
   (when visit
     (setf buffer-file-name filename)
